@@ -24,3 +24,7 @@ export const TILE_LAYERS: TileLayerDef[] = [
   { id: "topo", label: "Topographic", url: "/tiles/124/{z}/{x}/{y}.webp" },
   { id: "aerial", label: "Aerial", url: "/tiles/297/{z}/{x}/{y}.webp" },
 ];
+
+/** Maps an operation can be played on. Only the one map is wired up so far (see the settings above). */
+export const MAPS = [{ id: "vt7", name: "Virolahti - Valtatie 7" }];
+export const mapName = (id: string) => MAPS.find((m) => m.id === id)?.name ?? id;

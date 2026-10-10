@@ -20,11 +20,15 @@ const routes: [string, RegExp, Handler][] = [];
 const route = (method: string, path: string, h: Handler) =>
   routes.push([method, new RegExp(`^${path.replace(/:(\w+)/g, "(?<$1>[^/]+)")}$`), h]);
 
-route("GET", "/api/state", () => d.snapshot());
+route("GET", "/api/operations", () => d.listOperations());
+route("POST", "/api/operations", (_, b) => d.createOperation(b));
+route("PATCH", "/api/operations/:id", (m, b) => d.updateOperation(Number(m.groups!.id), b));
+route("DELETE", "/api/operations/:id", (m) => d.deleteOperation(Number(m.groups!.id)));
+route("GET", "/api/operations/:id/state", (m) => d.snapshot(Number(m.groups!.id)));
 
-route("POST", "/api/units", (_, b) => {
+route("POST", "/api/operations/:id/units", (m, b) => {
   if (!(d.SIDES as readonly string[]).includes(b.side as string)) throw new Error("bad side");
-  return d.createUnit(b);
+  return d.createUnit(Number(m.groups!.id), b);
 });
 route("PATCH", "/api/units/:id", (m, b) => d.updateUnit(Number(m.groups!.id), b));
 route("DELETE", "/api/units/:id", (m) => d.deleteUnit(Number(m.groups!.id)));
@@ -41,9 +45,9 @@ route("PUT", "/api/units/:id/vehicles/:typeId", (m, b) =>
 route("DELETE", "/api/units/:id/vehicles/:typeId", (m) =>
   d.removeUnitVehicle(Number(m.groups!.id), Number(m.groups!.typeId)));
 
-route("POST", "/api/frontlines", (_, b) => {
+route("POST", "/api/operations/:id/frontlines", (m, b) => {
   if (!b.taken_at) throw new Error("taken_at required");
-  return d.createFrontline(b);
+  return d.createFrontline(Number(m.groups!.id), b);
 });
 route("PATCH", "/api/frontlines/:id", (m, b) => d.updateFrontline(Number(m.groups!.id), b));
 route("DELETE", "/api/frontlines/:id", (m) => d.deleteFrontline(Number(m.groups!.id)));

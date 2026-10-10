@@ -59,3 +59,12 @@ export interface Frontline {
   taken_at: string; // local date-time, YYYY-MM-DDTHH:mm
   shapes: Shape[];
 }
+
+export interface Operation {
+  id: number;
+  name: string;
+  map_id: string;
+  created_at: string;
+  unit_count: number;
+  snapshot_count: number;
+}

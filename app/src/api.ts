@@ -1,4 +1,4 @@
-import type { Frontline, Shape, Unit, UnitVehicle, VehicleCategory, VehicleType } from "./types";
+import type { Frontline, Operation, Shape, Unit, UnitVehicle, VehicleCategory, VehicleType } from "./types";
 
 export interface State {
   units: Unit[];
@@ -18,8 +18,12 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
 }
 
 export const api = {
-  state: () => call<State>("GET", "/api/state"),
-  createUnit: (u: Partial<Unit>) => call<Unit>("POST", "/api/units", u),
+  operations: () => call<Operation[]>("GET", "/api/operations"),
+  createOperation: (name: string, map_id: string) => call<Operation>("POST", "/api/operations", { name, map_id }),
+  renameOperation: (id: number, name: string) => call<Operation>("PATCH", `/api/operations/${id}`, { name }),
+  deleteOperation: (id: number) => call<void>("DELETE", `/api/operations/${id}`),
+  state: (op: number) => call<State>("GET", `/api/operations/${op}/state`),
+  createUnit: (op: number, u: Partial<Unit>) => call<Unit>("POST", `/api/operations/${op}/units`, u),
   updateUnit: (id: number, patch: Partial<Unit>) => call<Unit>("PATCH", `/api/units/${id}`, patch),
   deleteUnit: (id: number) => call<void>("DELETE", `/api/units/${id}`),
   createVehicleType: (name: string, category: VehicleCategory) =>
@@ -28,8 +32,8 @@ export const api = {
   deleteVehicleType: (id: number) => call<void>("DELETE", `/api/vehicle-types/${id}`),
   setUnitVehicle: (unitId: number, typeId: number, v: Pick<UnitVehicle, "operational" | "damaged" | "destroyed">) =>
     call<UnitVehicle>("PUT", `/api/units/${unitId}/vehicles/${typeId}`, v),
-  createFrontline: (b: { taken_at: string; label?: string; copy_from?: number; shapes?: Shape[] }) =>
-    call<Frontline>("POST", "/api/frontlines", b),
+  createFrontline: (op: number, b: { taken_at: string; label?: string; copy_from?: number; shapes?: Shape[] }) =>
+    call<Frontline>("POST", `/api/operations/${op}/frontlines`, b),
   updateFrontline: (id: number, patch: Partial<Pick<Frontline, "label" | "taken_at" | "shapes">>) =>
     call<Frontline>("PATCH", `/api/frontlines/${id}`, patch),
   deleteFrontline: (id: number) => call<void>("DELETE", `/api/frontlines/${id}`),

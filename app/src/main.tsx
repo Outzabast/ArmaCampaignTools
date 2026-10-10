@@ -1,11 +1,6 @@
 import { createRoot } from "react-dom/client";
 import "leaflet/dist/leaflet.css";
 import "./styles.css";
-import { StoreProvider } from "./store";
-import { App } from "./App";
+import { Root } from "./ops";
 
-createRoot(document.getElementById("root")!).render(
-  <StoreProvider>
-    <App />
-  </StoreProvider>,
-);
+createRoot(document.getElementById("root")!).render(<Root />);

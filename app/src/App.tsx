@@ -3,8 +3,11 @@ import type L from "leaflet";
 import { GameMap, type MeasureRequest } from "./map/GameMap";
 import type { MeasureMode } from "./map/MeasureTool";
 import { UnitLayer } from "./map/UnitLayer";
-import { FrontlineLayer, SHAPE_COLOR, hitTestShape, type DrawControl, type DrawTool } from "./map/FrontlineLayer";
+import { FrontlineLayer, SHAPE_COLOR, hitTestShape, type DrawControl, type DrawMode, type DrawTool } from "./map/FrontlineLayer";
+import { metersPerPixel, simplifyPoints } from "./map/simplify";
 import { useStore } from "./store";
+import { useOperation } from "./opContext";
+import { mapName } from "./map/config";
 import { SIDES, SIDE_LABEL, type Side, type ShapeKind } from "./types";
 import { UiCtx, type MenuItem, type Placing, type Tab } from "./ui/common";
 import { ContextMenu } from "./ui/ContextMenu";
@@ -12,12 +15,34 @@ import { OrbatList } from "./ui/OrbatList";
 import { OrbatModal } from "./ui/OrbatModal";
 import { UnitEditor } from "./ui/UnitEditor";
 import { VehicleLibrary } from "./ui/VehicleLibrary";
-import { DRAW_TOOLS, FrontlinePanel, KIND_LABEL, type FrontState } from "./ui/FrontlinePanel";
+import { DRAW_TOOLS, DrawModeSwitch, FrontlinePanel, KIND_LABEL, type FrontState } from "./ui/FrontlinePanel";
 
 const MIN_POINTS = { zone: 3, line: 2 } as const;
 
+/** Small localStorage-backed preference; falls back silently when storage is unavailable. */
+function usePref<T extends string | number>(key: string, initial: T) {
+  const [v, setV] = useState<T>(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw === null ? initial : (typeof initial === "number" ? (Number(raw) as T) : (raw as T));
+    } catch {
+      return initial;
+    }
+  });
+  const set = useCallback((n: T) => {
+    setV(n);
+    try {
+      localStorage.setItem(key, String(n));
+    } catch {
+      /* ignore */
+    }
+  }, [key]);
+  return [v, set] as const;
+}
+
 export function App() {
   const s = useStore();
+  const { operation, switchOperation } = useOperation();
   const [map, setMap] = useState<L.Map | null>(null);
   const [placing, setPlacingRaw] = useState<Placing>(null);
   const [visibleSides, setVisibleSides] = useState<Set<Side>>(new Set(SIDES));
@@ -31,6 +56,8 @@ export function App() {
   const [shapeId, setShapeId] = useState<string | null>(null);
   const [showFront, setShowFront] = useState(true);
   const [showPrevious, setShowPrevious] = useState(false);
+  const [drawMode, setDrawMode] = usePref<DrawMode>("fl.drawMode", "points");
+  const [detail, setDetail] = usePref<number>("fl.detailPx", 3);
 
   // One map tool at a time: starting any of measure / bearing / place unit / draw shape cancels the others.
   const startMeasure = useCallback((mode: MeasureMode, seed?: L.LatLng) => {
@@ -64,7 +91,13 @@ export function App() {
   const front = s.activeFront;
   const frontIdx = front ? s.frontlines.findIndex((f) => f.id === front.id) : -1;
   const previous = frontIdx > 0 ? s.frontlines[frontIdx - 1] : null;
-  const fs: FrontState = { tool, setTool, selectedId: shapeId, setSelectedId: setShapeId, visible: showFront, setVisible: setShowFront, showPrevious, setShowPrevious };
+  const simplify = (id: string) => {
+    if (!map || !front) return;
+    // Same tolerance (in screen pixels) as freehand drawing, at the zoom level you are looking at.
+    const tol = Math.max(detail, 2) * metersPerPixel(map);
+    s.saveShapes(front.id, front.shapes.map((sh) => (sh.id === id ? { ...sh, points: simplifyPoints(sh.points, tol, sh.type === "zone") } : sh)));
+  };
+  const fs: FrontState = { tool, setTool, selectedId: shapeId, setSelectedId: setShapeId, visible: showFront, setVisible: setShowFront, showPrevious, setShowPrevious, drawMode, setDrawMode, detail, setDetail, simplify };
   const onFrontTab = tab === "frontline";
 
   // Frontline tools only make sense while the Frontline tab is open.
@@ -227,13 +260,17 @@ export function App() {
                   <span className="swatch" style={{ background: SHAPE_COLOR[tool.kind] }} />
                   <b>Drawing {DRAW_TOOLS.find((d) => d.tool.kind === tool.kind)?.label.toLowerCase()}</b>
                   <span>· {drawCount} point{drawCount === 1 ? "" : "s"}</span>
-                  <button disabled={drawCount === 0} onClick={() => drawControl.current?.undo()}>↶ Undo point</button>
+                  <DrawModeSwitch fs={fs} />
+                </div>
+                <div className="hud-row">
+                  <button disabled={drawCount === 0} onClick={() => drawControl.current?.undo()}>↶ Undo {drawMode === "freehand" ? "stroke" : "point"}</button>
                   <button className="primary" disabled={drawCount < MIN_POINTS[tool.type]} onClick={() => drawControl.current?.finish()}>✔ Finish</button>
                   <button onClick={() => setTool(null)}>✕ Cancel</button>
                 </div>
                 <small>
-                  Click to add points ({drawCount < MIN_POINTS[tool.type] ? `need ${MIN_POINTS[tool.type] - drawCount} more` : "ready to finish"}) · double-click or Enter finishes · Backspace undoes
-                  {tool.type === "zone" ? " · click the first point to close" : ""}
+                  {drawMode === "freehand"
+                    ? "Press and drag to trace — release and the stroke becomes points · hold Space to pan · Enter or Finish when done"
+                    : `Click to add points (${drawCount < MIN_POINTS[tool.type] ? `need ${MIN_POINTS[tool.type] - drawCount} more` : "ready to finish"}) · double-click or Enter finishes${tool.type === "zone" ? " · click the first point to close" : ""}`}
                 </small>
               </div>
             )}
@@ -248,6 +285,8 @@ export function App() {
             editing={onFrontTab}
             tool={onFrontTab ? tool : null}
             selectedId={shapeId}
+            drawMode={drawMode}
+            detailPx={detail}
             controlRef={drawControl}
             onProgress={setDrawCount}
             onSelect={setShapeId}
@@ -257,6 +296,13 @@ export function App() {
           <UnitLayer map={map} visibleSides={visibleSides} />
         </div>
         <aside className="panel">
+          <div className="opbar">
+            <div className="grow">
+              <b title={operation.name}>{operation.name}</b>
+              <small>{mapName(operation.map_id)}</small>
+            </div>
+            <button onClick={switchOperation}>Switch operation</button>
+          </div>
           <nav className="tabs">
             <button className={tab === "orbat" ? "active" : ""} onClick={() => setTab("orbat")}>ORBAT</button>
             <button className={tab === "vehicles" ? "active" : ""} onClick={() => setTab("vehicles")}>Vehicles</button>

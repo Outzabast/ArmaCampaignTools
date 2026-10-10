@@ -39,7 +39,8 @@ interface Store {
 const Ctx = createContext<Store | null>(null);
 export const useStore = () => useContext(Ctx)!;
 
-export function StoreProvider({ children }: { children: ReactNode }) {
+/** State for one operation. Mounted with `key={operationId}` so switching operations starts from a clean slate. */
+export function StoreProvider({ operationId, children }: { operationId: number; children: ReactNode }) {
   const [units, setUnits] = useState<Unit[]>([]);
   const [vehicleTypes, setVehicleTypes] = useState<VehicleType[]>([]);
   const [unitVehicles, setUnitVehicles] = useState<UnitVehicle[]>([]);
@@ -51,13 +52,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [orbatViewId, setOrbatViewId] = useState<number | null>(null);
 
   const reload = useCallback(async () => {
-    const s = await api.state();
+    const s = await api.state(operationId);
     setUnits(s.units);
     setVehicleTypes(s.vehicleTypes);
     setUnitVehicles(s.unitVehicles);
     // An unsaved shape edit is newer than what the server just returned.
     if (!pendingSave.current) setFrontlines(s.frontlines);
-  }, []);
+  }, [operationId]);
 
   useEffect(() => {
     reload().catch((e) => setError(`Cannot reach the API: ${e.message}`));
@@ -92,7 +93,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     activeFront,
     setActiveFront: setActiveFrontId,
     createFrontline: async (taken_at, label, copyFrom) => {
-      const f = await run(() => api.createFrontline({ taken_at, label, copy_from: copyFrom }));
+      const f = await run(() => api.createFrontline(operationId, { taken_at, label, copy_from: copyFrom }));
       if (f) setActiveFrontId(f.id);
     },
     updateFrontlineMeta: async (id, patch) => void (await run(() => api.updateFrontline(id, patch))),
@@ -120,7 +121,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     orbatViewId,
     openOrbat: setOrbatViewId,
 
-    createUnit: (u) => run(() => api.createUnit({ sidc: defaultSidc(u.side), name: "New unit", ...u })),
+    createUnit: (u) => run(() => api.createUnit(operationId, { sidc: defaultSidc(u.side), name: "New unit", ...u })),
     updateUnit: async (id, patch) => void (await run(() => api.updateUnit(id, patch))),
     deleteUnit: async (id) => {
       const gone = new Set([id, ...descendantIds(tree, id)]);

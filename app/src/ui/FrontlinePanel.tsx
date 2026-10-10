@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
 import type { Shape, ShapeKind } from "../types";
-import { areaKm2, SHAPE_COLOR, type DrawTool } from "../map/FrontlineLayer";
+import { areaKm2, SHAPE_COLOR, type DrawMode, type DrawTool } from "../map/FrontlineLayer";
 import { TextField } from "./common";
 
 export interface FrontState {
@@ -13,6 +13,38 @@ export interface FrontState {
   setVisible: (v: boolean) => void;
   showPrevious: boolean;
   setShowPrevious: (v: boolean) => void;
+  drawMode: DrawMode;
+  setDrawMode: (m: DrawMode) => void;
+  /** Freehand simplification tolerance, screen px. */
+  detail: number;
+  setDetail: (px: number) => void;
+  simplify: (shapeId: string) => void;
+}
+
+const DETAIL: [label: string, px: number][] = [
+  ["Fine", 1.5],
+  ["Medium", 3],
+  ["Coarse", 6],
+];
+
+/** Points vs freehand drawing style, shared by the panel and the on-map drawing bar. */
+export function DrawModeSwitch({ fs }: { fs: FrontState }) {
+  return (
+    <div className="mode-switch">
+      <div className="seg">
+        <button className={fs.drawMode === "points" ? "active" : ""} onClick={() => fs.setDrawMode("points")} title="Click each corner">◉ Points</button>
+        <button className={fs.drawMode === "freehand" ? "active" : ""} onClick={() => fs.setDrawMode("freehand")} title="Press and drag to trace">✎ Freehand</button>
+      </div>
+      {fs.drawMode === "freehand" && (
+        <label className="inline" title="How closely the traced line is followed. Fine keeps more points.">
+          Detail
+          <select value={fs.detail} onChange={(e) => fs.setDetail(Number(e.target.value))}>
+            {DETAIL.map(([l, px]) => <option key={l} value={px}>{l}</option>)}
+          </select>
+        </label>
+      )}
+    </div>
+  );
 }
 
 export const KIND_LABEL: Record<ShapeKind, string> = {
@@ -59,7 +91,7 @@ function Guide({ hasSnapshot, hasShapes, drawing }: { hasSnapshot: boolean; hasS
         <ol>
           <li className={cls(1)}>Create a snapshot — a dated copy of the frontline.</li>
           <li className={cls(2)}>Pick what to draw below (or right-click the map): an <b>area</b> for who holds the ground, or a <b>front line</b> for the line of contact.</li>
-          <li className={cls(3)}>Click points on the map. Finish with <b>double-click</b>, <b>Enter</b>, or the Finish button. Backspace undoes the last point.</li>
+          <li className={cls(3)}>Click points on the map, or switch to <b>Freehand</b> and drag along a terrain feature. Finish with <b>double-click</b>, <b>Enter</b> or the Finish button. Backspace undoes the last point or stroke.</li>
           <li className={cls(4)}>Adjust: click a shape, drag its square handles, click the yellow dots to add a point, right-click a handle to remove it.</li>
         </ol>
       )}
@@ -156,6 +188,12 @@ export function FrontlinePanel({ fs }: { fs: FrontState }) {
       {front && (
         <>
           <h4>2 · Draw on this snapshot</h4>
+          <DrawModeSwitch fs={fs} />
+          <small className="hint mode-hint">
+            {fs.drawMode === "points"
+              ? "Click each corner. Best for straight or simple edges."
+              : "Press and drag along a coast, road or tree line. Release and it is converted into editable points. Draw several strokes to build one shape; hold Space to pan."}
+          </small>
           <div className="tool-list">
             {DRAW_TOOLS.map(({ icon, label, desc, tool }) => {
               const active = fs.tool?.type === tool.type && fs.tool.kind === tool.kind;
@@ -184,6 +222,7 @@ export function FrontlinePanel({ fs }: { fs: FrontState }) {
                 </label>
               )}
               <label>Label <TextField value={selected.label} placeholder="optional" onCommit={(label) => patchShape(selected.id, { label })} /></label>
+              <button onClick={() => fs.simplify(selected.id)} title="Remove points that barely change the shape">Simplify ({selected.points.length} points)</button>
               <button onClick={() => { s.saveShapes(front.id, front.shapes.filter((sh) => sh.id !== selected.id)); fs.setSelectedId(null); }}>Delete shape</button>
             </div>
           )}
@@ -194,7 +233,7 @@ export function FrontlinePanel({ fs }: { fs: FrontState }) {
               <li key={sh.id} className={sh.id === fs.selectedId ? "sel" : ""} onClick={() => fs.setSelectedId(sh.id)}>
                 <span className="swatch" style={{ background: SHAPE_COLOR[sh.kind] }} />
                 <span className="grow">{sh.label || KIND_LABEL[sh.kind]}</span>
-                <small>{sh.type === "zone" ? `${areaKm2(sh.points).toFixed(1)} km²` : `${sh.points.length} pts`}</small>
+                <small>{sh.type === "zone" ? `${areaKm2(sh.points).toFixed(1)} km² · ` : ""}{sh.points.length} pts</small>
               </li>
             ))}
           </ul>

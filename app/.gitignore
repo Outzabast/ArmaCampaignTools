@@ -1,3 +1,6 @@
 node_modules
-data/*.db*
 dist
+# data/c2.db is tracked so campaign data travels with the repo; only SQLite scratch files are ignored.
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm

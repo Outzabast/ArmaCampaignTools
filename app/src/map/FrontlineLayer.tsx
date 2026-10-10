@@ -1,5 +1,6 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
 import L from "leaflet";
+import { rdpIndices } from "./simplify";
 import type { Frontline, Pt, Shape, ShapeKind } from "../types";
 
 export const SHAPE_COLOR: Record<ShapeKind, string> = {
@@ -41,12 +42,19 @@ function pathOptions(s: Shape, selected: boolean, interactive: boolean): L.PathO
 const vertexIcon = L.divIcon({ className: "fl-vertex", iconSize: [12, 12] });
 const midIcon = L.divIcon({ className: "fl-mid", iconSize: [8, 8] });
 
+export type DrawMode = "points" | "freehand";
+
 export interface DrawControl {
   finish: () => void;
   undo: () => void;
+  /** Re-applies mode-dependent map behaviour (dragging, cursor) after the mode changed. */
+  refresh: () => void;
 }
 
 interface Props {
+  drawMode: DrawMode;
+  /** Freehand simplification tolerance in screen pixels (smaller = more points). */
+  detailPx: number;
   controlRef: MutableRefObject<DrawControl | null>;
   onProgress: (points: number) => void;
   map: L.Map | null;
@@ -151,7 +159,8 @@ export function FrontlineLayer(p: Props) {
     return () => void group.remove();
   }, [p.map, p.frontline, p.visible, p.editing, p.tool, p.selectedId]);
 
-  // Draw tool: click adds points. Finish with double-click, Enter, the HUD button, or (areas) by clicking the first point.
+  // Draw tool. Points mode: click adds points. Freehand mode: press-and-drag traces a stroke that is simplified into points
+  // on release; several strokes accumulate. Finish with double-click, Enter, the HUD button, or (points mode, areas) the first point.
   useEffect(() => {
     const map = p.map;
     const tool = p.tool;
@@ -159,33 +168,62 @@ export function FrontlineLayer(p: Props) {
     const color = SHAPE_COLOR[tool.kind];
     const min = MIN_POINTS[tool.type];
     const pts: L.LatLng[] = [];
+    const undoStack: number[] = []; // points added by each click / stroke
     const dots = L.layerGroup().addTo(map);
     const hint = L.tooltip({ permanent: true, direction: "auto", offset: [16, 0], className: "fl-hint" });
     let preview: L.Polyline | L.Polygon | undefined;
+    let strokePreview: L.Polyline | undefined;
+    let stroke: L.LatLng[] | null = null;
     let cursor: L.LatLng | undefined;
+    let spaceDown = false;
 
-    const hintText = () =>
-      pts.length === 0
+    const freehand = () => cb.current.drawMode === "freehand";
+
+    const hintText = () => {
+      if (freehand()) {
+        return pts.length === 0
+          ? "Press and drag to trace · hold Space to pan"
+          : `${pts.length} points · drag to add more · Enter to finish · hold Space to pan`;
+      }
+      return pts.length === 0
         ? "Click to place the first point"
         : pts.length < min
           ? `Click to add point ${pts.length + 1} (need at least ${min})`
           : tool.type === "zone"
             ? "Click to add · click the first point, double-click or Enter to finish"
             : "Click to add · double-click or Enter to finish";
+    };
 
     const sync = () => {
-      const all = cursor && pts.length ? [...pts, cursor] : pts;
+      const all = cursor && pts.length && !freehand() ? [...pts, cursor] : pts;
       const style: L.PolylineOptions = { pane: PANE, interactive: false, color, weight: 3, dashArray: "6 6", fillOpacity: 0.15 };
       if (!preview) preview = (tool.type === "zone" ? L.polygon(all, style) : L.polyline(all, style)).addTo(map);
       else preview.setLatLngs(all);
       dots.clearLayers();
-      pts.forEach((q, i) => {
-        const closable = tool.type === "zone" && i === 0 && pts.length >= min;
-        L.circleMarker(q, { pane: PANE, interactive: false, radius: closable ? 9 : 5, color, weight: 3, fillColor: "#fff", fillOpacity: 1 }).addTo(dots);
-      });
-      if (cursor) hint.setLatLng(cursor).setContent(hintText());
-      if (cursor && !map.hasLayer(hint)) hint.addTo(map);
+      if (pts.length <= 80) {
+        pts.forEach((q, i) => {
+          const closable = !freehand() && tool.type === "zone" && i === 0 && pts.length >= min;
+          L.circleMarker(q, { pane: PANE, interactive: false, radius: closable ? 9 : freehand() ? 3 : 5, color, weight: 3, fillColor: "#fff", fillOpacity: 1 }).addTo(dots);
+        });
+      }
+      if (cursor && !stroke) {
+        hint.setLatLng(cursor).setContent(hintText());
+        if (!map.hasLayer(hint)) hint.addTo(map);
+      }
       cb.current.onProgress(pts.length);
+    };
+
+    // Freehand panning: map dragging is off so the drag draws, unless Space is held.
+    const applyMode = () => {
+      if (freehand() && !spaceDown) map.dragging.disable();
+      else map.dragging.enable();
+      map.getContainer().style.cursor = spaceDown ? "grab" : "crosshair";
+      if (!freehand()) {
+        stroke = null;
+        strokePreview?.remove();
+        strokePreview = undefined;
+      }
+      sync();
     };
 
     const finish = () => {
@@ -197,22 +235,56 @@ export function FrontlineLayer(p: Props) {
       cb.current.onToolDone();
     };
     const undo = () => {
-      pts.pop();
+      const n = undoStack.pop() ?? 0;
+      pts.splice(pts.length - n, n);
+      sync();
+    };
+
+    const endStroke = () => {
+      const raw = stroke;
+      stroke = null;
+      strokePreview?.remove();
+      strokePreview = undefined;
+      map.getContainer().style.cursor = "crosshair";
+      if (!raw || raw.length < 2) return;
+      const px = raw.map((q) => map.latLngToContainerPoint(q));
+      const keep = rdpIndices(px, cb.current.detailPx).map((i) => raw[i]);
+      // A new stroke that starts on the previous end continues it instead of duplicating that vertex.
+      const last = pts[pts.length - 1];
+      if (last && map.latLngToContainerPoint(last).distanceTo(map.latLngToContainerPoint(keep[0])) < 6) keep.shift();
+      pts.push(...keep);
+      undoStack.push(keep.length);
       sync();
     };
 
     const onClick = (e: L.LeafletMouseEvent) => {
+      if (freehand()) return;
       if (tool.type === "zone" && pts.length >= min && map.latLngToContainerPoint(pts[0]).distanceTo(e.containerPoint) < 14) {
         finish();
         return;
       }
       pts.push(e.latlng);
+      undoStack.push(1);
       cursor = e.latlng;
       sync();
     };
+    const onDown = (e: L.LeafletMouseEvent) => {
+      if (!freehand() || spaceDown || e.originalEvent.button !== 0) return;
+      // Without this the browser starts a text selection, and the next drag becomes a native drag-and-drop that swallows mouseup.
+      e.originalEvent.preventDefault();
+      stroke = [e.latlng];
+      hint.remove();
+    };
     const onMove = (e: L.LeafletMouseEvent) => {
       cursor = e.latlng;
-      sync();
+      if (stroke) {
+        const last = map.latLngToContainerPoint(stroke[stroke.length - 1]);
+        if (last.distanceTo(e.containerPoint) < 2) return;
+        stroke.push(e.latlng);
+        const style: L.PolylineOptions = { pane: PANE, interactive: false, color, weight: 4, opacity: 0.9 };
+        if (strokePreview) strokePreview.setLatLngs(stroke);
+        else strokePreview = L.polyline(stroke, style).addTo(map);
+      } else sync();
     };
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.matches?.("input, textarea, select")) return;
@@ -221,30 +293,53 @@ export function FrontlineLayer(p: Props) {
       else if (e.key === "Backspace" || (e.key === "z" && (e.ctrlKey || e.metaKey))) {
         e.preventDefault();
         undo();
+      } else if (e.key === " " && freehand()) {
+        e.preventDefault();
+        if (!spaceDown) {
+          spaceDown = true;
+          applyMode();
+        }
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === " " && spaceDown) {
+        spaceDown = false;
+        applyMode();
       }
     };
 
-    p.controlRef.current = { finish, undo };
+    p.controlRef.current = { finish, undo, refresh: applyMode };
     map.doubleClickZoom.disable();
-    map.getContainer().style.cursor = "crosshair";
     map.on("click", onClick);
+    map.on("mousedown", onDown);
     map.on("mousemove", onMove);
     map.on("dblclick", finish);
+    document.addEventListener("mouseup", endStroke); // also fires when the button is released outside the map
     document.addEventListener("keydown", onKey);
+    document.addEventListener("keyup", onKeyUp);
+    applyMode();
     cb.current.onProgress(0);
     return () => {
       p.controlRef.current = null;
       preview?.remove();
+      strokePreview?.remove();
       dots.remove();
       hint.remove();
       map.doubleClickZoom.enable();
+      map.dragging.enable();
       map.getContainer().style.cursor = "";
       map.off("click", onClick);
+      map.off("mousedown", onDown);
       map.off("mousemove", onMove);
       map.off("dblclick", finish);
+      document.removeEventListener("mouseup", endStroke);
       document.removeEventListener("keydown", onKey);
+      document.removeEventListener("keyup", onKeyUp);
     };
   }, [p.map, p.tool, p.frontline?.id]);
+
+  // Switching between points / freehand mid-shape keeps the points drawn so far.
+  useEffect(() => p.controlRef.current?.refresh(), [p.drawMode]);
 
   // Click on empty map clears the shape selection while editing.
   useEffect(() => {

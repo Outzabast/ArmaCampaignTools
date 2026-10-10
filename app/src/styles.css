@@ -186,3 +186,34 @@ h4 small { text-transform: none; letter-spacing: 0; font-weight: 400; }
 /* HUD sits at the bottom and only its buttons catch the mouse, so it never blocks a click on the map. */
 .hud { top: auto; bottom: 40px; pointer-events: none; }
 .hud button { pointer-events: auto; }
+
+/* ---- draw mode switch ---- */
+.mode-switch { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.mode-switch .seg { flex: 1; margin: 0; }
+.mode-switch .inline { margin: 0; white-space: nowrap; }
+.mode-switch .inline select { width: auto; }
+.mode-hint { margin: 0 0 8px; }
+.hud .mode-switch { margin: 0; }
+.hud .mode-switch .seg { display: flex; flex: none; }
+.hud .mode-switch .seg button { border-radius: 0; }
+.hud .mode-switch .seg button.active { background: var(--accent); border-color: var(--accent); }
+.hud .mode-switch label { color: #fff; font-size: 12px; margin: 0; display: flex; align-items: center; gap: 4px; pointer-events: auto; }
+.hud .mode-switch select { background: #2d3441; color: #fff; border: 1px solid #4a5366; border-radius: 4px; padding: 3px; pointer-events: auto; }
+.hud .hud-row + .hud-row { margin-top: 6px; }
+.leaflet-container { user-select: none; -webkit-user-select: none; }
+
+/* ---- operations ---- */
+.opbar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--bg2); border-bottom: 1px solid var(--line); }
+.opbar b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.opbar small { color: var(--dim); }
+.ops-screen { min-height: 100%; display: flex; align-items: center; justify-content: center; background: var(--bg); color: var(--fg); padding: 24px; box-sizing: border-box; font: 14px system-ui, sans-serif; }
+.ops-card { width: 640px; max-width: 100%; }
+.ops-card h1 { margin: 0 0 4px; }
+.ops-card h3 { margin: 22px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); }
+.ops-card button { padding: 6px 12px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg3); color: var(--fg); cursor: pointer; }
+.ops-card input, .ops-card select { width: 100%; padding: 7px 9px; background: var(--bg2); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; font: inherit; box-sizing: border-box; }
+.ops-list { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ops-list li { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--bg2); border: 1px solid var(--line); border-radius: 6px; }
+.ops-list li .grow { cursor: pointer; }
+.ops-list li small { display: block; color: var(--dim); margin-top: 2px; }
+.ops-card .error { margin: 10px 0; border-radius: 4px; }
