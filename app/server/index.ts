@@ -52,6 +52,12 @@ route("POST", "/api/operations/:id/frontlines", (m, b) => {
 route("PATCH", "/api/frontlines/:id", (m, b) => d.updateFrontline(Number(m.groups!.id), b));
 route("DELETE", "/api/frontlines/:id", (m) => d.deleteFrontline(Number(m.groups!.id)));
 
+route("PUT", "/api/frontlines/:id/sitreps/:side", (m, b) => {
+  if (!(d.SIDES as readonly string[]).includes(m.groups!.side)) throw new Error("bad side");
+  return d.setSitrep(Number(m.groups!.id), m.groups!.side, b);
+});
+route("DELETE", "/api/frontlines/:id/sitreps/:side", (m) => d.deleteSitrep(Number(m.groups!.id), m.groups!.side));
+
 createServer(async (req, res) => {
   const path = (req.url ?? "").split("?")[0];
   for (const [method, re, handler] of routes) {

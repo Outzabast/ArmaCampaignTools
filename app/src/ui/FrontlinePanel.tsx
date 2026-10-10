@@ -3,6 +3,7 @@ import { useStore } from "../store";
 import type { Shape, ShapeKind } from "../types";
 import { areaKm2, SHAPE_COLOR, type DrawMode, type DrawTool } from "../map/FrontlineLayer";
 import { TextField } from "./common";
+import { SitrepPanel, SITREP_SIDES } from "./SitrepPanel";
 
 export interface FrontState {
   tool: DrawTool | null;
@@ -19,7 +20,12 @@ export interface FrontState {
   detail: number;
   setDetail: (px: number) => void;
   simplify: (shapeId: string) => void;
+  /** Frontline tab sub-view: drawing shapes, or the snapshot's SITREPs. */
+  view: FrontView;
+  setView: (v: FrontView) => void;
 }
+
+export type FrontView = "draw" | "sitrep";
 
 const DETAIL: [label: string, px: number][] = [
   ["Fine", 1.5],
@@ -119,6 +125,7 @@ export function FrontlinePanel({ fs }: { fs: FrontState }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [front?.id]);
 
+  const reportCount = front ? s.sitreps.filter((r) => r.frontline_id === front.id && SITREP_SIDES.includes(r.side)).length : 0;
   const selected = front?.shapes.find((sh) => sh.id === fs.selectedId) ?? null;
   const patchShape = (id: string, patch: Partial<Shape>) =>
     front && s.saveShapes(front.id, front.shapes.map((sh) => (sh.id === id ? { ...sh, ...patch } : sh)));
@@ -131,7 +138,7 @@ export function FrontlinePanel({ fs }: { fs: FrontState }) {
 
   return (
     <div className="frontline-panel">
-      <Guide hasSnapshot={!!front} hasShapes={!!front?.shapes.length} drawing={!!fs.tool} />
+      {fs.view === "draw" && <Guide hasSnapshot={!!front} hasShapes={!!front?.shapes.length} drawing={!!fs.tool} />}
 
       <label className="check">
         <input type="checkbox" checked={fs.visible} onChange={(e) => fs.setVisible(e.target.checked)} /> Show frontline on map
@@ -186,6 +193,17 @@ export function FrontlinePanel({ fs }: { fs: FrontState }) {
       )}
 
       {front && (
+        <div className="seg view-switch">
+          <button className={fs.view === "draw" ? "active" : ""} onClick={() => fs.setView("draw")}>✎ Draw</button>
+          <button className={fs.view === "sitrep" ? "active" : ""} onClick={() => fs.setView("sitrep")}>
+            ☰ SITREP{reportCount ? ` (${reportCount}/${SITREP_SIDES.length})` : ""}
+          </button>
+        </div>
+      )}
+
+      {front && fs.view === "sitrep" && <SitrepPanel front={front} previous={idx > 0 ? list[idx - 1] : null} />}
+
+      {front && fs.view === "draw" && (
         <>
           <h4>2 · Draw on this snapshot</h4>
           <DrawModeSwitch fs={fs} />

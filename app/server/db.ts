@@ -55,6 +55,15 @@ CREATE TABLE IF NOT EXISTS frontlines (
   taken_at   TEXT NOT NULL,
   shapes     TEXT NOT NULL DEFAULT '[]'
 );
+-- One optional situation report per side per frontline snapshot; a missing row means that side has not reported.
+CREATE TABLE IF NOT EXISTS sitreps (
+  frontline_id INTEGER NOT NULL REFERENCES frontlines(id) ON DELETE CASCADE,
+  side         TEXT    NOT NULL CHECK (side IN ('friend','hostile','neutral','unknown')),
+  author       TEXT    NOT NULL DEFAULT '',
+  body         TEXT    NOT NULL DEFAULT '',
+  updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (frontline_id, side)
+);
 `);
 
 // Databases created before operations existed: add the column and move their data into a first operation.
@@ -65,6 +74,13 @@ for (const t of ["units", "frontlines"]) {
     db.exec(`ALTER TABLE ${t} ADD COLUMN operation_id INTEGER REFERENCES operations(id) ON DELETE CASCADE`);
   }
 }
+// Operation situation / background, written by the Zeus team.
+if (!hasColumn("operations", "situation")) {
+  db.exec(`ALTER TABLE operations ADD COLUMN situation TEXT NOT NULL DEFAULT '';
+           ALTER TABLE operations ADD COLUMN situation_author TEXT NOT NULL DEFAULT '';
+           ALTER TABLE operations ADD COLUMN situation_updated_at TEXT`);
+}
+
 const orphans = db.prepare(
   "SELECT (SELECT COUNT(*) FROM units WHERE operation_id IS NULL) + (SELECT COUNT(*) FROM frontlines WHERE operation_id IS NULL) AS n",
 ).get() as { n: number };
@@ -108,6 +124,12 @@ export function createOperation(b: Row) {
 
 export function updateOperation(id: number, b: Row) {
   if (typeof b.name === "string" && b.name.trim()) db.prepare("UPDATE operations SET name = ? WHERE id = ?").run(b.name.trim(), id);
+  if (typeof b.situation === "string") {
+    const has = b.situation.trim() !== "";
+    db.prepare(
+      `UPDATE operations SET situation = ?, situation_author = ?, situation_updated_at = ${has ? "datetime('now')" : "NULL"} WHERE id = ?`,
+    ).run(has ? b.situation : "", has ? String(b.situation_author ?? "").trim() : "", id);
+  }
   return getOperation(id);
 }
 
@@ -128,6 +150,9 @@ export function snapshot(operationId: number) {
       .prepare("SELECT * FROM frontlines WHERE operation_id = ? ORDER BY taken_at, id")
       .all(operationId)
       .map(parseFrontline),
+    sitreps: db
+      .prepare("SELECT s.* FROM sitreps s JOIN frontlines f ON f.id = s.frontline_id WHERE f.operation_id = ?")
+      .all(operationId),
   };
 }
 
@@ -218,4 +243,22 @@ export function updateFrontline(id: number, b: Row) {
 
 export function deleteFrontline(id: number) {
   db.prepare("DELETE FROM frontlines WHERE id = ?").run(id);
+}
+
+/** Upserts a side's SITREP for a snapshot; an empty body removes it (the side goes back to "no report"). */
+export function setSitrep(frontlineId: number, side: string, b: Row) {
+  const body = String(b.body ?? "");
+  if (!body.trim()) {
+    deleteSitrep(frontlineId, side);
+    return undefined;
+  }
+  db.prepare(
+    `INSERT INTO sitreps (frontline_id, side, author, body, updated_at) VALUES (?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(frontline_id, side) DO UPDATE SET author = excluded.author, body = excluded.body, updated_at = excluded.updated_at`,
+  ).run(frontlineId, side, String(b.author ?? "").trim(), body);
+  return db.prepare("SELECT * FROM sitreps WHERE frontline_id = ? AND side = ?").get(frontlineId, side);
+}
+
+export function deleteSitrep(frontlineId: number, side: string) {
+  db.prepare("DELETE FROM sitreps WHERE frontline_id = ? AND side = ?").run(frontlineId, side);
 }

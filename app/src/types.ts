@@ -60,11 +60,22 @@ export interface Frontline {
   shapes: Shape[];
 }
 
+export interface Sitrep {
+  frontline_id: number;
+  side: Side;
+  author: string;
+  body: string;
+  updated_at: string; // UTC, "YYYY-MM-DD HH:MM:SS"
+}
+
 export interface Operation {
   id: number;
   name: string;
   map_id: string;
   created_at: string;
+  situation: string;
+  situation_author: string;
+  situation_updated_at: string | null;
   unit_count: number;
   snapshot_count: number;
 }

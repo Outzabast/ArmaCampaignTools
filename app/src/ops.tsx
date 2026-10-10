@@ -60,7 +60,16 @@ export function Root() {
   const current = ops.find((o) => o.id === openId);
   if (current) {
     return (
-      <OpCtx.Provider value={{ operation: current, switchOperation: () => open(null) }}>
+      <OpCtx.Provider
+        value={{
+          operation: current,
+          switchOperation: () => open(null),
+          saveSituation: async (author, body) => {
+            await api.setSituation(current.id, body, author);
+            await reload();
+          },
+        }}
+      >
         <StoreProvider key={current.id} operationId={current.id}>
           <App />
         </StoreProvider>

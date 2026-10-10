@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { api } from "./api";
 import { defaultSidc } from "./orbat/sidc";
 import { buildTree, descendantIds, type Tree } from "./orbat/rollup";
-import type { Frontline, Shape, Side, Unit, UnitVehicle, VehicleCategory, VehicleType } from "./types";
+import type { Frontline, Shape, Side, Sitrep, Unit, UnitVehicle, VehicleCategory, VehicleType } from "./types";
 
 interface Store {
   units: Unit[];
@@ -18,6 +18,10 @@ interface Store {
   deleteFrontline: (id: number) => Promise<void>;
   /** Optimistic: updates the UI immediately and saves to the API a moment later. */
   saveShapes: (id: number, shapes: Shape[]) => void;
+  sitreps: Sitrep[];
+  /** An empty body clears that side's SITREP. */
+  saveSitrep: (frontlineId: number, side: Side, author: string, body: string) => Promise<boolean>;
+  deleteSitrep: (frontlineId: number, side: Side) => Promise<void>;
   error: string | null;
   clearError: () => void;
 
@@ -45,6 +49,7 @@ export function StoreProvider({ operationId, children }: { operationId: number; 
   const [vehicleTypes, setVehicleTypes] = useState<VehicleType[]>([]);
   const [unitVehicles, setUnitVehicles] = useState<UnitVehicle[]>([]);
   const [frontlines, setFrontlines] = useState<Frontline[]>([]);
+  const [sitreps, setSitreps] = useState<Sitrep[]>([]);
   const [activeFrontId, setActiveFrontId] = useState<number | null>(null);
   const pendingSave = useRef<{ timer: number; id: number; shapes: Shape[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +61,7 @@ export function StoreProvider({ operationId, children }: { operationId: number; 
     setUnits(s.units);
     setVehicleTypes(s.vehicleTypes);
     setUnitVehicles(s.unitVehicles);
+    setSitreps(s.sitreps);
     // An unsaved shape edit is newer than what the server just returned.
     if (!pendingSave.current) setFrontlines(s.frontlines);
   }, [operationId]);
@@ -114,6 +120,18 @@ export function StoreProvider({ operationId, children }: { operationId: number; 
       }, 400);
       pendingSave.current = { timer, id, shapes };
     },
+    sitreps,
+    saveSitrep: async (id, side, author, body) => {
+      try {
+        await api.setSitrep(id, side, { author, body });
+        await reload();
+        return true;
+      } catch (e) {
+        setError((e as Error).message);
+        return false;
+      }
+    },
+    deleteSitrep: async (id, side) => void (await run(() => api.deleteSitrep(id, side))),
     error,
     clearError: () => setError(null),
     selectedId,

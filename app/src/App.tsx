@@ -15,7 +15,8 @@ import { OrbatList } from "./ui/OrbatList";
 import { OrbatModal } from "./ui/OrbatModal";
 import { UnitEditor } from "./ui/UnitEditor";
 import { VehicleLibrary } from "./ui/VehicleLibrary";
-import { DRAW_TOOLS, DrawModeSwitch, FrontlinePanel, KIND_LABEL, type FrontState } from "./ui/FrontlinePanel";
+import { SituationPanel } from "./ui/SituationPanel";
+import { DRAW_TOOLS, DrawModeSwitch, FrontlinePanel, KIND_LABEL, type FrontState, type FrontView } from "./ui/FrontlinePanel";
 
 const MIN_POINTS = { zone: 3, line: 2 } as const;
 
@@ -58,6 +59,7 @@ export function App() {
   const [showPrevious, setShowPrevious] = useState(false);
   const [drawMode, setDrawMode] = usePref<DrawMode>("fl.drawMode", "points");
   const [detail, setDetail] = usePref<number>("fl.detailPx", 3);
+  const [frontView, setFrontView] = usePref<FrontView>("fl.view", "draw");
 
   // One map tool at a time: starting any of measure / bearing / place unit / draw shape cancels the others.
   const startMeasure = useCallback((mode: MeasureMode, seed?: L.LatLng) => {
@@ -97,16 +99,17 @@ export function App() {
     const tol = Math.max(detail, 2) * metersPerPixel(map);
     s.saveShapes(front.id, front.shapes.map((sh) => (sh.id === id ? { ...sh, points: simplifyPoints(sh.points, tol, sh.type === "zone") } : sh)));
   };
-  const fs: FrontState = { tool, setTool, selectedId: shapeId, setSelectedId: setShapeId, visible: showFront, setVisible: setShowFront, showPrevious, setShowPrevious, drawMode, setDrawMode, detail, setDetail, simplify };
+  const fs: FrontState = { tool, setTool, selectedId: shapeId, setSelectedId: setShapeId, visible: showFront, setVisible: setShowFront, showPrevious, setShowPrevious, drawMode, setDrawMode, detail, setDetail, simplify, view: frontView, setView: setFrontView };
   const onFrontTab = tab === "frontline";
+  const drawing = onFrontTab && frontView === "draw";
 
-  // Frontline tools only make sense while the Frontline tab is open.
+  // Frontline tools only make sense while drawing on the Frontline tab.
   useEffect(() => {
-    if (!onFrontTab) {
+    if (!drawing) {
       setToolRaw(null);
       setShapeId(null);
     }
-  }, [onFrontTab]);
+  }, [drawing]);
 
   const center = useCallback(
     (id: number) => {
@@ -153,6 +156,7 @@ export function App() {
 
   const startDraw = (t: DrawTool) => {
     setTab("frontline");
+    setFrontView("draw");
     setTool(t);
   };
 
@@ -167,7 +171,7 @@ export function App() {
     if (front && shape) {
       const patch = (p: Partial<typeof shape>) => s.saveShapes(front.id, front.shapes.map((sh) => (sh.id === shape.id ? { ...sh, ...p } : sh)));
       items.push({ header: `${KIND_LABEL[shape.kind]}${shape.label ? ` — ${shape.label}` : ""}` });
-      items.push({ label: "Select and reshape", onClick: () => { setTab("frontline"); setShapeId(shape.id); } });
+      items.push({ label: "Select and reshape", onClick: () => { setTab("frontline"); setFrontView("draw"); setShapeId(shape.id); } });
       if (shape.type === "zone") {
         for (const k of ["friend", "hostile", "contested"] as ShapeKind[]) {
           if (k !== shape.kind) items.push({ label: `Change to ${KIND_LABEL[k].toLowerCase()}`, onClick: () => patch({ kind: k }) });
@@ -245,7 +249,7 @@ export function App() {
       ? `Click the map to place a ${SIDE_LABEL[placing.side]} unit — Esc or right-click to cancel`
       : "Click the map to set the unit's position — Esc or right-click to cancel"
     : null;
-  const idleHint = onFrontTab && front && front.shapes.length === 0 && !tool && !placingBanner;
+  const idleHint = drawing && front && front.shapes.length === 0 && !tool && !placingBanner;
 
   return (
     <UiCtx.Provider value={ui}>
@@ -281,9 +285,9 @@ export function App() {
             frontline={front}
             previous={previous}
             visible={showFront}
-            showPrevious={showPrevious && onFrontTab}
-            editing={onFrontTab}
-            tool={onFrontTab ? tool : null}
+            showPrevious={showPrevious && drawing}
+            editing={drawing}
+            tool={drawing ? tool : null}
             selectedId={shapeId}
             drawMode={drawMode}
             detailPx={detail}
@@ -304,6 +308,7 @@ export function App() {
             <button onClick={switchOperation}>Switch operation</button>
           </div>
           <nav className="tabs">
+            <button className={tab === "situation" ? "active" : ""} onClick={() => setTab("situation")}>Situation</button>
             <button className={tab === "orbat" ? "active" : ""} onClick={() => setTab("orbat")}>ORBAT</button>
             <button className={tab === "vehicles" ? "active" : ""} onClick={() => setTab("vehicles")}>Vehicles</button>
             <button className={tab === "frontline" ? "active" : ""} onClick={() => setTab("frontline")}>Frontline</button>
@@ -312,7 +317,7 @@ export function App() {
             <div className="error" onClick={s.clearError}>{s.error} <small>(click to dismiss)</small></div>
           )}
           <div className="panel-body">
-            {tab === "frontline" ? <FrontlinePanel fs={fs} /> : tab === "vehicles" ? <VehicleLibrary /> : selected ? <UnitEditor key={selected.id} unit={selected} /> : <OrbatList />}
+            {tab === "situation" ? <SituationPanel /> : tab === "frontline" ? <FrontlinePanel fs={fs} /> : tab === "vehicles" ? <VehicleLibrary /> : selected ? <UnitEditor key={selected.id} unit={selected} /> : <OrbatList />}
           </div>
         </aside>
         {s.orbatViewId !== null && <OrbatModal unitId={s.orbatViewId} onClose={() => s.openOrbat(null)} />}

@@ -1,10 +1,11 @@
-import type { Frontline, Operation, Shape, Unit, UnitVehicle, VehicleCategory, VehicleType } from "./types";
+import type { Frontline, Operation, Shape, Side, Sitrep, Unit, UnitVehicle, VehicleCategory, VehicleType } from "./types";
 
 export interface State {
   units: Unit[];
   vehicleTypes: VehicleType[];
   unitVehicles: UnitVehicle[];
   frontlines: Frontline[];
+  sitreps: Sitrep[];
 }
 
 async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -21,6 +22,8 @@ export const api = {
   operations: () => call<Operation[]>("GET", "/api/operations"),
   createOperation: (name: string, map_id: string) => call<Operation>("POST", "/api/operations", { name, map_id }),
   renameOperation: (id: number, name: string) => call<Operation>("PATCH", `/api/operations/${id}`, { name }),
+  setSituation: (id: number, situation: string, situation_author: string) =>
+    call<Operation>("PATCH", `/api/operations/${id}`, { situation, situation_author }),
   deleteOperation: (id: number) => call<void>("DELETE", `/api/operations/${id}`),
   state: (op: number) => call<State>("GET", `/api/operations/${op}/state`),
   createUnit: (op: number, u: Partial<Unit>) => call<Unit>("POST", `/api/operations/${op}/units`, u),
@@ -37,5 +40,8 @@ export const api = {
   updateFrontline: (id: number, patch: Partial<Pick<Frontline, "label" | "taken_at" | "shapes">>) =>
     call<Frontline>("PATCH", `/api/frontlines/${id}`, patch),
   deleteFrontline: (id: number) => call<void>("DELETE", `/api/frontlines/${id}`),
+  setSitrep: (frontlineId: number, side: Side, b: { author: string; body: string }) =>
+    call<Sitrep | undefined>("PUT", `/api/frontlines/${frontlineId}/sitreps/${side}`, b),
+  deleteSitrep: (frontlineId: number, side: Side) => call<void>("DELETE", `/api/frontlines/${frontlineId}/sitreps/${side}`),
   removeUnitVehicle: (unitId: number, typeId: number) => call<void>("DELETE", `/api/units/${unitId}/vehicles/${typeId}`),
 };

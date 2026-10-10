@@ -11,7 +11,7 @@ export const SIDE_COLOR: Record<Side, string> = {
 
 export type Placing = { kind: "new"; side: Side } | { kind: "existing"; unitId: number } | null;
 
-export type Tab = "orbat" | "vehicles" | "frontline";
+export type Tab = "situation" | "orbat" | "vehicles" | "frontline";
 
 export type MenuItem =
   | { header: string }
