@@ -4,6 +4,7 @@ import { SIDES, SIDE_LABEL, type Unit } from "../types";
 import { addTotals, emptyTotals } from "../orbat/rollup";
 import { SIDE_COLOR, SymbolImg, useUi } from "./common";
 import { TotalsLine } from "./UnitEditor";
+import { TemplateList, TemplateSelect } from "./Templates";
 
 function Node({ unit, depth }: { unit: Unit; depth: number }) {
   const s = useStore();
@@ -44,6 +45,9 @@ function Node({ unit, depth }: { unit: Unit; depth: number }) {
 export function OrbatList() {
   const s = useStore();
   const ui = useUi();
+  const [template, setTemplate] = useState<number | null>(null);
+  // A template deleted while selected falls back to a blank unit.
+  const templateId = s.templates.some((t) => t.id === template) ? template! : undefined;
   return (
     <div className="orbat-list">
       <div className="addrow">
@@ -54,12 +58,18 @@ export function OrbatList() {
             className={ui.placing?.kind === "new" && ui.placing.side === side ? "active" : ""}
             style={{ borderColor: SIDE_COLOR[side] }}
             title={`Place a new ${SIDE_LABEL[side]} unit on the map`}
-            onClick={() => ui.setPlacing({ kind: "new", side })}
+            onClick={() => ui.setPlacing({ kind: "new", side, templateId })}
           >
             {SIDE_LABEL[side].split(" ")[0]}
           </button>
         ))}
       </div>
+      {s.templates.length > 0 && (
+        <div className="addrow">
+          <span>From:</span>
+          <TemplateSelect value={templateId ?? null} onChange={setTemplate} />
+        </div>
+      )}
       {SIDES.map((side) => {
         const roots = (s.tree.children.get(null) ?? []).filter((u) => u.side === side);
         const total = roots.reduce((t, u) => addTotals(t, s.tree.rolled.get(u.id)!), emptyTotals());
@@ -77,6 +87,7 @@ export function OrbatList() {
           </section>
         );
       })}
+      <TemplateList />
     </div>
   );
 }

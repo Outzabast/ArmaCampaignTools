@@ -1,4 +1,4 @@
-import type { Frontline, Operation, Shape, Side, Sitrep, Unit, UnitVehicle, VehicleCategory, VehicleType } from "./types";
+import type { Frontline, Operation, Shape, Side, Sitrep, Unit, UnitTemplate, UnitVehicle, VehicleCategory, VehicleCounts, VehicleType } from "./types";
 
 export interface State {
   units: Unit[];
@@ -6,6 +6,7 @@ export interface State {
   unitVehicles: UnitVehicle[];
   frontlines: Frontline[];
   sitreps: Sitrep[];
+  templates: UnitTemplate[];
 }
 
 async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -26,14 +27,17 @@ export const api = {
     call<Operation>("PATCH", `/api/operations/${id}`, { situation, situation_author }),
   deleteOperation: (id: number) => call<void>("DELETE", `/api/operations/${id}`),
   state: (op: number) => call<State>("GET", `/api/operations/${op}/state`),
-  createUnit: (op: number, u: Partial<Unit>) => call<Unit>("POST", `/api/operations/${op}/units`, u),
+  createUnit: (op: number, u: Partial<Unit> & { template_id?: number }) => call<Unit>("POST", `/api/operations/${op}/units`, u),
+  saveTemplate: (unitId: number, name: string) => call<UnitTemplate[]>("POST", `/api/units/${unitId}/template`, { name }),
+  renameTemplate: (id: number, name: string) => call<void>("PATCH", `/api/templates/${id}`, { name }),
+  deleteTemplate: (id: number) => call<void>("DELETE", `/api/templates/${id}`),
   updateUnit: (id: number, patch: Partial<Unit>) => call<Unit>("PATCH", `/api/units/${id}`, patch),
   deleteUnit: (id: number) => call<void>("DELETE", `/api/units/${id}`),
   createVehicleType: (name: string, category: VehicleCategory) =>
     call<VehicleType>("POST", "/api/vehicle-types", { name, category }),
   updateVehicleType: (id: number, patch: Partial<VehicleType>) => call<VehicleType>("PATCH", `/api/vehicle-types/${id}`, patch),
   deleteVehicleType: (id: number) => call<void>("DELETE", `/api/vehicle-types/${id}`),
-  setUnitVehicle: (unitId: number, typeId: number, v: Pick<UnitVehicle, "operational" | "damaged" | "destroyed">) =>
+  setUnitVehicle: (unitId: number, typeId: number, v: VehicleCounts) =>
     call<UnitVehicle>("PUT", `/api/units/${unitId}/vehicles/${typeId}`, v),
   createFrontline: (op: number, b: { taken_at: string; label?: string; copy_from?: number; shapes?: Shape[] }) =>
     call<Frontline>("POST", `/api/operations/${op}/frontlines`, b),

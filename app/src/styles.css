@@ -248,3 +248,10 @@ h4 small { text-transform: none; letter-spacing: 0; font-weight: 400; }
 .ops-list li .grow { cursor: pointer; }
 .ops-list li small { display: block; color: var(--dim); margin-top: 2px; }
 .ops-card .error { margin: 10px 0; border-radius: 4px; }
+
+/* ---- templates ---- */
+.addrow .template-select { flex: 1; }
+.btnrow .template-select { flex: 1; min-width: 0; }
+.templates li { display: flex; align-items: center; gap: 6px; padding: 3px 6px; }
+.templates li small, .templates header small { color: var(--dim); }
+.templates li button { padding: 0 6px !important; }

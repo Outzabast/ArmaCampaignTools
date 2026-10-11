@@ -64,6 +64,14 @@ CREATE TABLE IF NOT EXISTS sitreps (
   updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (frontline_id, side)
 );
+-- Reusable ORBAT subtrees, shared across operations like the vehicle library. "tree" is a TemplateNode (JSON).
+CREATE TABLE IF NOT EXISTS unit_templates (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  side       TEXT NOT NULL CHECK (side IN ('friend','hostile','neutral','unknown')),
+  tree       TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `);
 
 // Databases created before operations existed: add the column and move their data into a first operation.
@@ -79,6 +87,12 @@ if (!hasColumn("operations", "situation")) {
   db.exec(`ALTER TABLE operations ADD COLUMN situation TEXT NOT NULL DEFAULT '';
            ALTER TABLE operations ADD COLUMN situation_author TEXT NOT NULL DEFAULT '';
            ALTER TABLE operations ADD COLUMN situation_updated_at TEXT`);
+}
+
+// Vehicle losses besides destruction.
+if (!hasColumn("unit_vehicles", "abandoned")) {
+  db.exec(`ALTER TABLE unit_vehicles ADD COLUMN abandoned INTEGER NOT NULL DEFAULT 0;
+           ALTER TABLE unit_vehicles ADD COLUMN captured INTEGER NOT NULL DEFAULT 0`);
 }
 
 const orphans = db.prepare(
@@ -153,6 +167,7 @@ export function snapshot(operationId: number) {
     sitreps: db
       .prepare("SELECT s.* FROM sitreps s JOIN frontlines f ON f.id = s.frontline_id WHERE f.operation_id = ?")
       .all(operationId),
+    templates: listTemplates(),
   };
 }
 
@@ -202,17 +217,102 @@ export function deleteVehicleType(id: number) {
   db.prepare("DELETE FROM vehicle_types WHERE id = ?").run(id);
 }
 
+const VEHICLE_STATUSES = ["operational", "damaged", "destroyed", "abandoned", "captured"] as const;
+
 export function setUnitVehicle(unitId: number, typeId: number, b: Row) {
   db.prepare(
-    `INSERT INTO unit_vehicles (unit_id, vehicle_type_id, operational, damaged, destroyed) VALUES (?,?,?,?,?)
-     ON CONFLICT(unit_id, vehicle_type_id) DO UPDATE SET operational = excluded.operational,
-       damaged = excluded.damaged, destroyed = excluded.destroyed`,
-  ).run(unitId, typeId, Number(b.operational ?? 0), Number(b.damaged ?? 0), Number(b.destroyed ?? 0));
+    `INSERT INTO unit_vehicles (unit_id, vehicle_type_id, ${VEHICLE_STATUSES.join(", ")}) VALUES (?,?,?,?,?,?,?)
+     ON CONFLICT(unit_id, vehicle_type_id) DO UPDATE SET
+       ${VEHICLE_STATUSES.map((c) => `${c} = excluded.${c}`).join(", ")}`,
+  ).run(unitId, typeId, ...VEHICLE_STATUSES.map((c) => Number(b[c] ?? 0)));
   return db.prepare("SELECT * FROM unit_vehicles WHERE unit_id = ? AND vehicle_type_id = ?").get(unitId, typeId);
 }
 
 export function removeUnitVehicle(unitId: number, typeId: number) {
   db.prepare("DELETE FROM unit_vehicles WHERE unit_id = ? AND vehicle_type_id = ?").run(unitId, typeId);
+}
+
+/** A template is a unit subtree at full strength: every casualty counts as active, every vehicle as operational. */
+interface TemplateNode {
+  name: string;
+  designation: string;
+  sidc: string;
+  personnel: number;
+  notes: string;
+  vehicles: { vehicle_type_id: number; count: number }[];
+  children: TemplateNode[];
+}
+
+const SIDC_DIGIT: Record<string, string> = { friend: "3", hostile: "6", neutral: "4", unknown: "1" };
+
+function listTemplates() {
+  return (db.prepare("SELECT * FROM unit_templates ORDER BY name, id").all() as Row[]).map((r) => {
+    const tree = JSON.parse(r.tree as string) as TemplateNode;
+    const count = (n: TemplateNode): number => 1 + n.children.reduce((a, c) => a + count(c), 0);
+    return { id: r.id, name: r.name, side: r.side, created_at: r.created_at, unit_count: count(tree) };
+  });
+}
+
+export function createTemplate(unitId: number, b: Row) {
+  const root = db.prepare("SELECT * FROM units WHERE id = ?").get(unitId) as Row | undefined;
+  if (!root) throw new Error("unknown unit");
+  const kids = db.prepare("SELECT * FROM units WHERE parent_id = ? ORDER BY sort, id");
+  const vehicles = db.prepare("SELECT * FROM unit_vehicles WHERE unit_id = ?");
+  const capture = (u: Row): TemplateNode => ({
+    name: u.name as string,
+    designation: u.designation as string,
+    sidc: u.sidc as string,
+    personnel: Number(u.pers_active) + Number(u.pers_wounded) + Number(u.pers_kia) + Number(u.pers_mia),
+    notes: u.notes as string,
+    vehicles: (vehicles.all(u.id) as Row[])
+      .map((v) => ({ vehicle_type_id: Number(v.vehicle_type_id), count: VEHICLE_STATUSES.reduce((a, c) => a + Number(v[c]), 0) }))
+      .filter((v) => v.count > 0),
+    children: (kids.all(u.id) as Row[]).map(capture),
+  });
+  const name = String(b.name ?? "").trim() || (root.name as string);
+  db.prepare("INSERT INTO unit_templates (name, side, tree) VALUES (?, ?, ?)").run(name, root.side as string, JSON.stringify(capture(root)));
+  return listTemplates();
+}
+
+export function renameTemplate(id: number, b: Row) {
+  const name = String(b.name ?? "").trim();
+  if (name) db.prepare("UPDATE unit_templates SET name = ? WHERE id = ?").run(name, id);
+}
+
+export function deleteTemplate(id: number) {
+  db.prepare("DELETE FROM unit_templates WHERE id = ?").run(id);
+}
+
+/** Builds a template's whole subtree in one transaction. The root takes the given side, parent and map position. */
+export function instantiateTemplate(operationId: number, templateId: number, b: Row) {
+  const row = db.prepare("SELECT tree FROM unit_templates WHERE id = ?").get(templateId) as Row | undefined;
+  if (!row) throw new Error("unknown template");
+  const side = String(b.side);
+  const digit = SIDC_DIGIT[side];
+  const knownTypes = new Set((db.prepare("SELECT id FROM vehicle_types").all() as Row[]).map((r) => Number(r.id)));
+  const insUnit = db.prepare(
+    `INSERT INTO units (operation_id, parent_id, side, name, designation, sidc, x, y, pers_active, notes, sort)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const insVehicle = db.prepare("INSERT INTO unit_vehicles (unit_id, vehicle_type_id, operational) VALUES (?, ?, ?)");
+  const build = (n: TemplateNode, parentId: number | bigint | null, sort: number, pos: [unknown, unknown]): number | bigint => {
+    const sidc = n.sidc.substring(0, 3) + digit + n.sidc.substring(4);
+    const id = insUnit.run(operationId, parentId, side, n.name, n.designation, sidc, ...(pos as never[]), n.personnel, n.notes, sort).lastInsertRowid;
+    // A vehicle type deleted from the library since the template was saved is skipped.
+    for (const v of n.vehicles) if (knownTypes.has(v.vehicle_type_id)) insVehicle.run(id, v.vehicle_type_id, v.count);
+    n.children.forEach((c, i) => build(c, id, i, [null, null]));
+    return id;
+  };
+  db.exec("BEGIN");
+  try {
+    const tree = JSON.parse(row.tree as string) as TemplateNode;
+    const rootId = build(tree, (b.parent_id as number | null) ?? null, Number(b.sort ?? 0), [b.x ?? null, b.y ?? null]);
+    db.exec("COMMIT");
+    return db.prepare("SELECT * FROM units WHERE id = ?").get(rootId);
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
 }
 
 function parseFrontline(r: Row) {

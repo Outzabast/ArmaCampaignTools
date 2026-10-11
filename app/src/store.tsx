@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { api } from "./api";
 import { defaultSidc } from "./orbat/sidc";
 import { buildTree, descendantIds, type Tree } from "./orbat/rollup";
-import type { Frontline, Shape, Side, Sitrep, Unit, UnitVehicle, VehicleCategory, VehicleType } from "./types";
+import type { Frontline, Shape, Side, Sitrep, Unit, UnitTemplate, UnitVehicle, VehicleCategory, VehicleCounts, VehicleType } from "./types";
 
 interface Store {
   units: Unit[];
@@ -30,14 +30,19 @@ interface Store {
   orbatViewId: number | null;
   openOrbat: (id: number | null) => void;
 
-  createUnit: (u: Partial<Unit> & { side: Side }) => Promise<Unit | undefined>;
+  /** With `template_id`, builds that template's whole subtree; the template's root becomes the returned unit. */
+  createUnit: (u: Partial<Unit> & { side: Side; template_id?: number }) => Promise<Unit | undefined>;
   updateUnit: (id: number, patch: Partial<Unit>) => Promise<void>;
   deleteUnit: (id: number) => Promise<void>;
   createVehicleType: (name: string, category: VehicleCategory) => Promise<VehicleType | undefined>;
   updateVehicleType: (id: number, patch: Partial<VehicleType>) => Promise<void>;
   deleteVehicleType: (id: number) => Promise<void>;
-  setUnitVehicle: (unitId: number, typeId: number, v: { operational: number; damaged: number; destroyed: number }) => Promise<void>;
+  setUnitVehicle: (unitId: number, typeId: number, v: VehicleCounts) => Promise<void>;
   removeUnitVehicle: (unitId: number, typeId: number) => Promise<void>;
+  templates: UnitTemplate[];
+  saveTemplate: (unitId: number, name: string) => Promise<void>;
+  renameTemplate: (id: number, name: string) => Promise<void>;
+  deleteTemplate: (id: number) => Promise<void>;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -50,6 +55,7 @@ export function StoreProvider({ operationId, children }: { operationId: number; 
   const [unitVehicles, setUnitVehicles] = useState<UnitVehicle[]>([]);
   const [frontlines, setFrontlines] = useState<Frontline[]>([]);
   const [sitreps, setSitreps] = useState<Sitrep[]>([]);
+  const [templates, setTemplates] = useState<UnitTemplate[]>([]);
   const [activeFrontId, setActiveFrontId] = useState<number | null>(null);
   const pendingSave = useRef<{ timer: number; id: number; shapes: Shape[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +68,7 @@ export function StoreProvider({ operationId, children }: { operationId: number; 
     setVehicleTypes(s.vehicleTypes);
     setUnitVehicles(s.unitVehicles);
     setSitreps(s.sitreps);
+    setTemplates(s.templates);
     // An unsaved shape edit is newer than what the server just returned.
     if (!pendingSave.current) setFrontlines(s.frontlines);
   }, [operationId]);
@@ -139,7 +146,8 @@ export function StoreProvider({ operationId, children }: { operationId: number; 
     orbatViewId,
     openOrbat: setOrbatViewId,
 
-    createUnit: (u) => run(() => api.createUnit(operationId, { sidc: defaultSidc(u.side), name: "New unit", ...u })),
+    createUnit: (u) =>
+      run(() => api.createUnit(operationId, u.template_id !== undefined ? u : { sidc: defaultSidc(u.side), name: "New unit", ...u })),
     updateUnit: async (id, patch) => void (await run(() => api.updateUnit(id, patch))),
     deleteUnit: async (id) => {
       const gone = new Set([id, ...descendantIds(tree, id)]);
@@ -152,6 +160,10 @@ export function StoreProvider({ operationId, children }: { operationId: number; 
     deleteVehicleType: async (id) => void (await run(() => api.deleteVehicleType(id))),
     setUnitVehicle: async (u, t, v) => void (await run(() => api.setUnitVehicle(u, t, v))),
     removeUnitVehicle: async (u, t) => void (await run(() => api.removeUnitVehicle(u, t))),
+    templates,
+    saveTemplate: async (id, name) => void (await run(() => api.saveTemplate(id, name))),
+    renameTemplate: async (id, name) => void (await run(() => api.renameTemplate(id, name))),
+    deleteTemplate: async (id) => void (await run(() => api.deleteTemplate(id))),
   };
 
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>;

@@ -1,17 +1,26 @@
 import { useState } from "react";
 import { useStore } from "../store";
-import { VEHICLE_CATEGORIES, SIDES, SIDE_LABEL, type Side, type Unit, type VehicleCategory } from "../types";
+import { VEHICLE_CATEGORIES, SIDES, SIDE_LABEL, type Side, type Unit, type VehicleCategory, type VehicleStatus } from "../types";
 import { defaultSidc, withSide } from "../orbat/sidc";
-import { personnelTotal, type Totals } from "../orbat/rollup";
+import { descendantIds, personnelTotal, vehicleTotal, type Totals } from "../orbat/rollup";
 import { Counter, SymbolImg, TextField, useUi } from "./common";
 import { SymbolPicker } from "./SymbolPicker";
+import { TemplateSelect } from "./Templates";
+
+const VEHICLE_COUNTERS: { status: VehicleStatus; label: string; tone: string }[] = [
+  { status: "operational", label: "Operational", tone: "ok" },
+  { status: "damaged", label: "Damaged", tone: "warn" },
+  { status: "destroyed", label: "Destroyed", tone: "bad" },
+  { status: "abandoned", label: "Abandoned", tone: "muted" },
+  { status: "captured", label: "Captured", tone: "bad" },
+];
 
 export function TotalsLine({ t }: { t: Totals }) {
   return (
     <span className="totals">
       <b title="Personnel active / total">{t.active}/{personnelTotal(t)}</b> pers
       <span className="sep-dot">·</span>
-      <b title="Vehicles operational / total">{t.vOp}/{t.vOp + t.vDmg + t.vKia}</b> veh
+      <b title="Vehicles operational / total">{t.vOp}/{vehicleTotal(t)}</b> veh
     </span>
   );
 }
@@ -33,7 +42,7 @@ function AddVehicle({ unit, onDone }: { unit: Unit; onDone: () => void }) {
       if (!t) return;
       typeId = t.id;
     }
-    await setUnitVehicle(unit.id, typeId, { operational: count, damaged: 0, destroyed: 0 });
+    await setUnitVehicle(unit.id, typeId, { operational: count, damaged: 0, destroyed: 0, abandoned: 0, captured: 0 });
     onDone();
   };
 
@@ -66,6 +75,7 @@ export function UnitEditor({ unit }: { unit: Unit }) {
   const ui = useUi();
   const [pickSymbol, setPickSymbol] = useState(false);
   const [addingVehicle, setAddingVehicle] = useState(false);
+  const [subTemplate, setSubTemplate] = useState<number | null>(null);
 
   const rolled = s.tree.rolled.get(unit.id)!;
   const kids = s.tree.children.get(unit.id) ?? [];
@@ -86,6 +96,11 @@ export function UnitEditor({ unit }: { unit: Unit }) {
   const onMap = unit.x !== null && unit.y !== null;
 
   const addChild = async () => {
+    // Stay on this unit when stamping out a template, so several copies can be added in a row.
+    if (subTemplate !== null) {
+      await s.createUnit({ side: unit.side, parent_id: unit.id, template_id: subTemplate, sort: kids.length });
+      return;
+    }
     const child = await s.createUnit({
       side: unit.side,
       parent_id: unit.id,
@@ -93,6 +108,12 @@ export function UnitEditor({ unit }: { unit: Unit }) {
       sidc: withSide(defaultSidc(unit.side), unit.side),
     });
     if (child) s.select(child.id);
+  };
+
+  const saveTemplate = () => {
+    const n = descendantIds(s.tree, unit.id).length;
+    const name = prompt(`Save "${unit.name}"${n ? ` and its ${n} subordinate unit(s)` : ""} as a template named:`, unit.name);
+    if (name?.trim()) s.saveTemplate(unit.id, name.trim());
   };
 
   return (
@@ -133,6 +154,7 @@ export function UnitEditor({ unit }: { unit: Unit }) {
         {onMap && <button onClick={() => ui.center(unit.id)}>Center</button>}
         {onMap && <button onClick={() => upd({ x: null, y: null })}>Remove from map</button>}
         <button onClick={() => s.openOrbat(unit.id)}>View ORBAT</button>
+        <button title="Save this unit and all its subordinates for reuse" onClick={saveTemplate}>Save as template</button>
       </div>
 
       <h4>Personnel <small>{kids.length > 0 && <>(subtree: {rolled.active}/{personnelTotal(rolled)} active)</>}</small></h4>
@@ -143,7 +165,7 @@ export function UnitEditor({ unit }: { unit: Unit }) {
         <Counter label="MIA" tone="muted" value={unit.pers_mia} onChange={(v) => upd({ pers_mia: v })} />
       </div>
 
-      <h4>Vehicles <small>{kids.length > 0 && <>(subtree: {rolled.vOp}/{rolled.vOp + rolled.vDmg + rolled.vKia} operational)</>}</small></h4>
+      <h4>Vehicles <small>{kids.length > 0 && <>(subtree: {rolled.vOp}/{vehicleTotal(rolled)} operational)</>}</small></h4>
       {myVehicles.map(({ v, type }) => (
         <div className="vehicle" key={type.id}>
           <div className="vehicle-name">
@@ -151,9 +173,9 @@ export function UnitEditor({ unit }: { unit: Unit }) {
             <button className="x" title="Remove from unit" onClick={() => s.removeUnitVehicle(unit.id, type.id)}>✕</button>
           </div>
           <div className="counters three">
-            <Counter label="Operational" tone="ok" value={v.operational} onChange={(n) => s.setUnitVehicle(unit.id, type.id, { ...v, operational: n })} />
-            <Counter label="Damaged" tone="warn" value={v.damaged} onChange={(n) => s.setUnitVehicle(unit.id, type.id, { ...v, damaged: n })} />
-            <Counter label="Destroyed" tone="bad" value={v.destroyed} onChange={(n) => s.setUnitVehicle(unit.id, type.id, { ...v, destroyed: n })} />
+            {VEHICLE_COUNTERS.map((c) => (
+              <Counter key={c.status} label={c.label} tone={c.tone} value={v[c.status]} onChange={(n) => s.setUnitVehicle(unit.id, type.id, { ...v, [c.status]: n })} />
+            ))}
           </div>
         </div>
       ))}
@@ -167,7 +189,10 @@ export function UnitEditor({ unit }: { unit: Unit }) {
           </li>
         ))}
       </ul>
-      <button onClick={addChild}>＋ Add subordinate</button>
+      <div className="btnrow">
+        <button onClick={addChild}>＋ Add subordinate</button>
+        <TemplateSelect value={subTemplate} onChange={setSubTemplate} />
+      </div>
 
       <h4>Notes</h4>
       <TextField multiline value={unit.notes} placeholder="Notes…" onCommit={(notes) => upd({ notes })} />

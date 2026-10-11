@@ -129,7 +129,7 @@ export function App() {
       const y = Math.round(e.latlng.lat * 10) / 10;
       setPlacingRaw(null);
       if (placing.kind === "new") {
-        const u = await s.createUnit({ side: placing.side, x, y });
+        const u = await s.createUnit({ side: placing.side, x, y, template_id: placing.templateId });
         if (u) {
           s.select(u.id);
           setVisibleSides((v) => new Set(v).add(placing.side));
@@ -197,6 +197,23 @@ export function App() {
       });
     }
 
+    if (s.templates.length > 0) {
+      items.push({ separator: true }, { header: "Add from template here" });
+      for (const t of s.templates) {
+        items.push({
+          label: `${t.name} (${SIDE_LABEL[t.side]})`,
+          onClick: async () => {
+            const u = await s.createUnit({ side: t.side, x, y, template_id: t.id });
+            if (u) {
+              s.select(u.id);
+              setVisibleSides((v) => new Set(v).add(t.side));
+              setTab("orbat");
+            }
+          },
+        });
+      }
+    }
+
     items.push({ separator: true }, { header: "Frontline" });
     if (front) {
       for (const d of DRAW_TOOLS) items.push({ label: `Draw ${d.label.toLowerCase()}`, onClick: () => startDraw(d.tool) });
@@ -246,7 +263,7 @@ export function App() {
   const selected = s.units.find((u) => u.id === s.selectedId) ?? null;
   const placingBanner = placing
     ? placing.kind === "new"
-      ? `Click the map to place a ${SIDE_LABEL[placing.side]} unit — Esc or right-click to cancel`
+      ? `Click the map to place a ${SIDE_LABEL[placing.side]} ${placing.templateId !== undefined ? `"${s.templates.find((t) => t.id === placing.templateId)?.name}"` : "unit"} — Esc or right-click to cancel`
       : "Click the map to set the unit's position — Esc or right-click to cancel"
     : null;
   const idleHint = drawing && front && front.shapes.length === 0 && !tool && !placingBanner;

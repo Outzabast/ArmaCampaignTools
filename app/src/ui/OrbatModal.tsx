@@ -20,6 +20,8 @@ function Row({ unit, depth }: { unit: Unit; depth: number }) {
         <td className="num ok">{t.vOp}</td>
         <td className="num warn">{t.vDmg}</td>
         <td className="num bad">{t.vKia}</td>
+        <td className="num muted">{t.vAbn}</td>
+        <td className="num bad">{t.vCap}</td>
       </tr>
       {kids.map((k) => <Row key={k.id} unit={k} depth={depth + 1} />)}
     </>
@@ -41,11 +43,11 @@ export function OrbatModal({ unitId, onClose }: { unitId: number; onClose: () =>
           <tr>
             <th rowSpan={2}>Unit</th>
             <th colSpan={4}>Personnel</th>
-            <th colSpan={3}>Vehicles</th>
+            <th colSpan={5}>Vehicles</th>
           </tr>
           <tr>
             <th>Active</th><th>Wounded</th><th>KIA</th><th>MIA</th>
-            <th>Oper.</th><th>Damaged</th><th>Destroyed</th>
+            <th>Oper.</th><th>Damaged</th><th>Destroyed</th><th>Aband.</th><th>Captured</th>
           </tr>
         </thead>
         <tbody>
@@ -57,6 +59,7 @@ export function OrbatModal({ unitId, onClose }: { unitId: number; onClose: () =>
             <td className="num ok">{t.active}</td><td className="num warn">{t.wounded}</td>
             <td className="num bad">{t.kia}</td><td className="num muted">{t.mia}</td>
             <td className="num ok">{t.vOp}</td><td className="num warn">{t.vDmg}</td><td className="num bad">{t.vKia}</td>
+            <td className="num muted">{t.vAbn}</td><td className="num bad">{t.vCap}</td>
           </tr>
         </tfoot>
       </table>
@@ -65,7 +68,7 @@ export function OrbatModal({ unitId, onClose }: { unitId: number; onClose: () =>
         <>
           <h4>Vehicles by type</h4>
           <table className="orbat-table">
-            <thead><tr><th>Type</th><th>Class</th><th>Oper.</th><th>Damaged</th><th>Destroyed</th></tr></thead>
+            <thead><tr><th>Type</th><th>Class</th><th>Oper.</th><th>Damaged</th><th>Destroyed</th><th>Aband.</th><th>Captured</th></tr></thead>
             <tbody>
               {vehicles.map((r) => (
                 <tr key={r.type.id}>
@@ -74,6 +77,8 @@ export function OrbatModal({ unitId, onClose }: { unitId: number; onClose: () =>
                   <td className="num ok">{r.operational}</td>
                   <td className="num warn">{r.damaged}</td>
                   <td className="num bad">{r.destroyed}</td>
+                  <td className="num muted">{r.abandoned}</td>
+                  <td className="num bad">{r.captured}</td>
                 </tr>
               ))}
             </tbody>

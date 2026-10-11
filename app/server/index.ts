@@ -28,10 +28,15 @@ route("GET", "/api/operations/:id/state", (m) => d.snapshot(Number(m.groups!.id)
 
 route("POST", "/api/operations/:id/units", (m, b) => {
   if (!(d.SIDES as readonly string[]).includes(b.side as string)) throw new Error("bad side");
+  if (b.template_id !== undefined) return d.instantiateTemplate(Number(m.groups!.id), Number(b.template_id), b);
   return d.createUnit(Number(m.groups!.id), b);
 });
 route("PATCH", "/api/units/:id", (m, b) => d.updateUnit(Number(m.groups!.id), b));
 route("DELETE", "/api/units/:id", (m) => d.deleteUnit(Number(m.groups!.id)));
+
+route("POST", "/api/units/:id/template", (m, b) => d.createTemplate(Number(m.groups!.id), b));
+route("PATCH", "/api/templates/:id", (m, b) => d.renameTemplate(Number(m.groups!.id), b));
+route("DELETE", "/api/templates/:id", (m) => d.deleteTemplate(Number(m.groups!.id)));
 
 route("POST", "/api/vehicle-types", (_, b) => {
   if (!b.name || !(d.VEHICLE_CATEGORIES as readonly string[]).includes(b.category as string)) throw new Error("bad vehicle type");

@@ -39,6 +39,21 @@ export interface UnitVehicle {
   operational: number;
   damaged: number;
   destroyed: number;
+  abandoned: number;
+  captured: number;
+}
+
+export const VEHICLE_STATUSES = ["operational", "damaged", "destroyed", "abandoned", "captured"] as const;
+export type VehicleStatus = (typeof VEHICLE_STATUSES)[number];
+export type VehicleCounts = Pick<UnitVehicle, VehicleStatus>;
+
+/** A saved ORBAT subtree (shared across operations) that new units can be created from. */
+export interface UnitTemplate {
+  id: number;
+  name: string;
+  side: Side;
+  created_at: string;
+  unit_count: number;
 }
 
 export type ShapeKind = "friend" | "hostile" | "contested" | "front";

@@ -1,4 +1,4 @@
-import type { Unit, UnitVehicle, VehicleType } from "../types";
+import type { Unit, UnitVehicle, VehicleCounts, VehicleType } from "../types";
 
 export interface Totals {
   active: number;
@@ -8,9 +8,11 @@ export interface Totals {
   vOp: number;
   vDmg: number;
   vKia: number;
+  vAbn: number;
+  vCap: number;
 }
 
-export const emptyTotals = (): Totals => ({ active: 0, wounded: 0, kia: 0, mia: 0, vOp: 0, vDmg: 0, vKia: 0 });
+export const emptyTotals = (): Totals => ({ active: 0, wounded: 0, kia: 0, mia: 0, vOp: 0, vDmg: 0, vKia: 0, vAbn: 0, vCap: 0 });
 
 export function addTotals(a: Totals, b: Totals): Totals {
   return {
@@ -21,11 +23,13 @@ export function addTotals(a: Totals, b: Totals): Totals {
     vOp: a.vOp + b.vOp,
     vDmg: a.vDmg + b.vDmg,
     vKia: a.vKia + b.vKia,
+    vAbn: a.vAbn + b.vAbn,
+    vCap: a.vCap + b.vCap,
   };
 }
 
 export const personnelTotal = (t: Totals) => t.active + t.wounded + t.kia + t.mia;
-export const vehicleTotal = (t: Totals) => t.vOp + t.vDmg + t.vKia;
+export const vehicleTotal = (t: Totals) => t.vOp + t.vDmg + t.vKia + t.vAbn + t.vCap;
 
 export interface Tree {
   children: Map<number | null, Unit[]>;
@@ -51,6 +55,8 @@ export function buildTree(units: Unit[], unitVehicles: UnitVehicle[]): Tree {
       t.vOp += v.operational;
       t.vDmg += v.damaged;
       t.vKia += v.destroyed;
+      t.vAbn += v.abandoned;
+      t.vCap += v.captured;
     }
   }
   const rolled = new Map<number, Totals>();
@@ -76,11 +82,8 @@ export function descendantIds(tree: Tree, id: number): number[] {
   return out;
 }
 
-export interface VehicleRow {
+export interface VehicleRow extends VehicleCounts {
   type: VehicleType;
-  operational: number;
-  damaged: number;
-  destroyed: number;
 }
 
 /** Vehicles of a unit and all its subordinates, merged per vehicle type. */
@@ -92,10 +95,12 @@ export function rolledVehicles(tree: Tree, unitId: number, unitVehicles: UnitVeh
     if (!ids.has(v.unit_id)) continue;
     const type = typeById.get(v.vehicle_type_id);
     if (!type) continue;
-    const row = byType.get(type.id) ?? { type, operational: 0, damaged: 0, destroyed: 0 };
+    const row = byType.get(type.id) ?? { type, operational: 0, damaged: 0, destroyed: 0, abandoned: 0, captured: 0 };
     row.operational += v.operational;
     row.damaged += v.damaged;
     row.destroyed += v.destroyed;
+    row.abandoned += v.abandoned;
+    row.captured += v.captured;
     byType.set(type.id, row);
   }
   return [...byType.values()].sort((a, b) => a.type.category.localeCompare(b.type.category) || a.type.name.localeCompare(b.type.name));

@@ -9,7 +9,7 @@ export const SIDE_COLOR: Record<Side, string> = {
   unknown: "#e8c74a",
 };
 
-export type Placing = { kind: "new"; side: Side } | { kind: "existing"; unitId: number } | null;
+export type Placing = { kind: "new"; side: Side; templateId?: number } | { kind: "existing"; unitId: number } | null;
 
 export type Tab = "situation" | "orbat" | "vehicles" | "frontline";
 
