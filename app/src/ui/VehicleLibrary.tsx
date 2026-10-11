@@ -2,12 +2,14 @@ import { useState } from "react";
 import { useStore } from "../store";
 import { VEHICLE_CATEGORIES, type VehicleCategory } from "../types";
 import { TextField } from "./common";
+import { matchesQuery } from "./VehiclePicker";
 
 /** The shared catalogue of vehicle types. Create once here (or on the fly from a unit) and reuse everywhere. */
 export function VehicleLibrary() {
   const s = useStore();
   const [name, setName] = useState("");
   const [category, setCategory] = useState<VehicleCategory>("wheeled");
+  const [filter, setFilter] = useState("");
 
   const uses = (typeId: number) => s.unitVehicles.filter((v) => v.vehicle_type_id === typeId).length;
   const add = async () => {
@@ -25,8 +27,9 @@ export function VehicleLibrary() {
         </select>
         <button className="primary" onClick={add}>Add</button>
       </div>
+      <input className="lib-search" placeholder={`Filter ${s.vehicleTypes.length} vehicles…`} value={filter} onChange={(e) => setFilter(e.target.value)} />
       {VEHICLE_CATEGORIES.map((cat) => {
-        const types = s.vehicleTypes.filter((t) => t.category === cat);
+        const types = s.vehicleTypes.filter((t) => t.category === cat && matchesQuery(t, filter));
         if (!types.length) return null;
         return (
           <section key={cat}>
@@ -51,6 +54,7 @@ export function VehicleLibrary() {
         );
       })}
       {s.vehicleTypes.length === 0 && <div className="empty-note">No vehicle types yet.</div>}
+      {s.vehicleTypes.length > 0 && filter && !s.vehicleTypes.some((t) => matchesQuery(t, filter)) && <div className="empty-note">No matches.</div>}
     </div>
   );
 }

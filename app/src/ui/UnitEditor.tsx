@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useStore } from "../store";
-import { VEHICLE_CATEGORIES, SIDES, SIDE_LABEL, type Side, type Unit, type VehicleCategory, type VehicleStatus } from "../types";
+import { SIDES, SIDE_LABEL, type Side, type Unit, type VehicleStatus, type VehicleType } from "../types";
 import { defaultSidc, withSide } from "../orbat/sidc";
 import { descendantIds, personnelTotal, vehicleTotal, type Totals } from "../orbat/rollup";
 import { Counter, SymbolImg, TextField, useUi } from "./common";
 import { SymbolPicker } from "./SymbolPicker";
 import { TemplateSelect } from "./Templates";
+import { VehiclePicker } from "./VehiclePicker";
 
 const VEHICLE_COUNTERS: { status: VehicleStatus; label: string; tone: string }[] = [
   { status: "operational", label: "Operational", tone: "ok" },
@@ -25,47 +26,36 @@ export function TotalsLine({ t }: { t: Totals }) {
   );
 }
 
+/** Adds vehicles from the shared library. Picking one adds it straight away, so several can be added in a row. */
 function AddVehicle({ unit, onDone }: { unit: Unit; onDone: () => void }) {
   const { vehicleTypes, unitVehicles, setUnitVehicle, createVehicleType } = useStore();
   const taken = new Set(unitVehicles.filter((v) => v.unit_id === unit.id).map((v) => v.vehicle_type_id));
-  const available = vehicleTypes.filter((t) => !taken.has(t.id));
-  const [choice, setChoice] = useState<string>(available[0] ? String(available[0].id) : "new");
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState<VehicleCategory>("wheeled");
   const [count, setCount] = useState(1);
+  const [flash, setFlash] = useState<string | null>(null);
 
-  const add = async () => {
-    let typeId = Number(choice);
-    if (choice === "new") {
-      if (!name.trim()) return;
-      const t = await createVehicleType(name.trim(), category);
-      if (!t) return;
-      typeId = t.id;
-    }
-    await setUnitVehicle(unit.id, typeId, { operational: count, damaged: 0, destroyed: 0, abandoned: 0, captured: 0 });
-    onDone();
+  const addType = async (t: VehicleType) => {
+    await setUnitVehicle(unit.id, t.id, { operational: count, damaged: 0, destroyed: 0, abandoned: 0, captured: 0 });
+    setFlash(`Added ${count} × ${t.name}`);
   };
 
   return (
     <div className="add-vehicle">
-      <select value={choice} onChange={(e) => setChoice(e.target.value)}>
-        {available.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.category})</option>)}
-        <option value="new">＋ New vehicle type…</option>
-      </select>
-      {choice === "new" && (
-        <div className="row2">
-          <input autoFocus placeholder="Vehicle name, e.g. BMP-2" value={name} onChange={(e) => setName(e.target.value)} />
-          <select value={category} onChange={(e) => setCategory(e.target.value as VehicleCategory)}>
-            {VEHICLE_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-          </select>
-        </div>
-      )}
       <div className="row2">
-        <label className="inline">Count <input type="number" min={1} value={count} onChange={(e) => setCount(Math.max(1, Number(e.target.value)))} /></label>
-        <span>
-          <button className="primary" onClick={add}>Add</button> <button onClick={onDone}>Cancel</button>
-        </span>
+        <label className="inline" title="How many to add when you pick a vehicle">
+          Quantity <input type="number" min={1} value={count} onChange={(e) => setCount(Math.max(1, Number(e.target.value) || 1))} />
+        </label>
+        <span className="add-flash">{flash && <>✔ {flash}</>}</span>
+        <button onClick={onDone}>Done</button>
       </div>
+      <VehiclePicker
+        types={vehicleTypes}
+        taken={taken}
+        onPick={addType}
+        onCreate={async (name, category) => {
+          const t = await createVehicleType(name, category);
+          if (t) await addType(t);
+        }}
+      />
     </div>
   );
 }

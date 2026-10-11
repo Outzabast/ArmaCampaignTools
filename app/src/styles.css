@@ -255,3 +255,22 @@ h4 small { text-transform: none; letter-spacing: 0; font-weight: 400; }
 .templates li { display: flex; align-items: center; gap: 6px; padding: 3px 6px; }
 .templates li small, .templates header small { color: var(--dim); }
 .templates li button { padding: 0 6px !important; }
+
+/* ---- vehicle picker ---- */
+.vpicker { display: flex; flex-direction: column; gap: 6px; }
+.vp-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.vp-chips button { padding: 2px 8px !important; font-size: 11px; border-radius: 10px !important; text-transform: capitalize; }
+.vp-chips button.active { background: var(--accent) !important; border-color: var(--accent) !important; color: #fff; }
+.vp-chips small { opacity: .75; margin-left: 2px; }
+.vp-list { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }
+.vp-head { position: sticky; top: 0; z-index: 1; padding: 3px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); background: var(--bg3); }
+.vp-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; cursor: pointer; }
+.vp-item.active { background: #2a4469; }
+.vp-item.taken { opacity: .45; cursor: default; }
+.vp-item small { color: var(--dim); white-space: nowrap; }
+.vp-item mark { background: #ffd40055; color: inherit; border-radius: 2px; }
+.vp-create { border-top: 1px solid var(--line); color: var(--ok); font-weight: 600; }
+.vp-create select { width: auto !important; margin: 0 !important; padding: 2px 4px !important; }
+.vp-empty { padding: 10px; color: var(--dim); font-style: italic; }
+.add-flash { color: var(--ok); font-size: 12px; align-self: center; }
+.lib-search { margin-bottom: 8px; }
