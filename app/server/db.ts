@@ -180,6 +180,7 @@ export function createUnit(operationId: number, b: Row) {
 }
 
 export function updateUnit(id: number, b: Row) {
+  if (b.parent_id !== undefined && b.parent_id !== null) checkReparent(id, Number(b.parent_id));
   const cols = UNIT_FIELDS.filter((f) => b[f] !== undefined);
   if (cols.length) {
     db.prepare(`UPDATE units SET ${cols.map((c) => `${c} = ?`).join(",")} WHERE id = ?`).run(
@@ -196,6 +197,19 @@ export function updateUnit(id: number, b: Row) {
     ).run(id, b.side, sidcDigit);
   }
   return db.prepare("SELECT * FROM units WHERE id = ?").get(id);
+}
+
+/** A unit may only move under a unit of the same operation and side, and never under itself or its own subordinates. */
+function checkReparent(id: number, parentId: number) {
+  const get = db.prepare("SELECT id, parent_id, operation_id, side FROM units WHERE id = ?");
+  const unit = get.get(id) as Row | undefined;
+  const parent = get.get(parentId) as Row | undefined;
+  if (!unit || !parent) throw new Error("unit not found");
+  if (parent.operation_id !== unit.operation_id) throw new Error("cannot move a unit to another operation");
+  if (parent.side !== unit.side) throw new Error("cannot move a unit under a unit of another side");
+  for (let p: Row | undefined = parent; p; p = p.parent_id === null ? undefined : (get.get(p.parent_id) as Row | undefined)) {
+    if (p.id === id) throw new Error("cannot move a unit under itself or its own subordinates");
+  }
 }
 
 export function deleteUnit(id: number) {

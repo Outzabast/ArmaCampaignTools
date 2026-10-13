@@ -105,3 +105,10 @@ export function rolledVehicles(tree: Tree, unitId: number, unitVehicles: UnitVeh
   }
   return [...byType.values()].sort((a, b) => a.type.category.localeCompare(b.type.category) || a.type.name.localeCompare(b.type.name));
 }
+
+/** Whether `unit` may be moved under `parent` (null = top level): same side, and not under itself or its own subordinates. */
+export function canReparent(tree: Tree, unit: Unit, parent: Unit | null): boolean {
+  if (parent === null) return unit.parent_id !== null;
+  if (parent.side !== unit.side || parent.id === unit.parent_id) return false;
+  return parent.id !== unit.id && !descendantIds(tree, unit.id).includes(parent.id);
+}

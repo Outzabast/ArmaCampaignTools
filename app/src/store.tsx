@@ -33,6 +33,8 @@ interface Store {
   /** With `template_id`, builds that template's whole subtree; the template's root becomes the returned unit. */
   createUnit: (u: Partial<Unit> & { side: Side; template_id?: number }) => Promise<Unit | undefined>;
   updateUnit: (id: number, patch: Partial<Unit>) => Promise<void>;
+  /** Moves a unit and its whole subtree under another unit (null = top level), placing it last among its new siblings. */
+  moveUnit: (id: number, parentId: number | null) => Promise<void>;
   deleteUnit: (id: number) => Promise<void>;
   createVehicleType: (name: string, category: VehicleCategory) => Promise<VehicleType | undefined>;
   updateVehicleType: (id: number, patch: Partial<VehicleType>) => Promise<void>;
@@ -149,6 +151,10 @@ export function StoreProvider({ operationId, children }: { operationId: number; 
     createUnit: (u) =>
       run(() => api.createUnit(operationId, u.template_id !== undefined ? u : { sidc: defaultSidc(u.side), name: "New unit", ...u })),
     updateUnit: async (id, patch) => void (await run(() => api.updateUnit(id, patch))),
+    moveUnit: async (id, parentId) => {
+      const sort = (tree.children.get(parentId) ?? []).reduce((m, u) => Math.max(m, u.sort + 1), 0);
+      await run(() => api.updateUnit(id, { parent_id: parentId, sort }));
+    },
     deleteUnit: async (id) => {
       const gone = new Set([id, ...descendantIds(tree, id)]);
       await run(() => api.deleteUnit(id));

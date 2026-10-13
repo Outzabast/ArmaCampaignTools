@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useStore } from "../store";
 import { SIDES, SIDE_LABEL, type Side, type Unit, type VehicleStatus, type VehicleType } from "../types";
 import { defaultSidc, withSide } from "../orbat/sidc";
-import { descendantIds, personnelTotal, vehicleTotal, type Totals } from "../orbat/rollup";
+import { canReparent, descendantIds, personnelTotal, vehicleTotal, type Totals, type Tree } from "../orbat/rollup";
 import { Counter, SymbolImg, TextField, useUi } from "./common";
 import { SymbolPicker } from "./SymbolPicker";
 import { TemplateSelect } from "./Templates";
@@ -60,6 +60,20 @@ function AddVehicle({ unit, onDone }: { unit: Unit; onDone: () => void }) {
   );
 }
 
+type CasualtyField = "pers_wounded" | "pers_kia" | "pers_mia";
+
+/** Units this one could report to, in ORBAT order and indented by depth. */
+function parentOptions(tree: Tree, unit: Unit) {
+  const out: { unit: Unit; depth: number }[] = [];
+  const walk = (u: Unit, depth: number) => {
+    if (u.side !== unit.side || u.id === unit.id) return; // skips the unit's own subtree too
+    out.push({ unit: u, depth });
+    for (const c of tree.children.get(u.id) ?? []) walk(c, depth + 1);
+  };
+  for (const root of tree.children.get(null) ?? []) walk(root, 0);
+  return out;
+}
+
 export function UnitEditor({ unit }: { unit: Unit }) {
   const s = useStore();
   const ui = useUi();
@@ -83,6 +97,9 @@ export function UnitEditor({ unit }: { unit: Unit }) {
   }
 
   const upd = (patch: Partial<Unit>) => s.updateUnit(unit.id, patch);
+  // Casualties come out of (or, when corrected down, go back to) the active count, which never drops below zero.
+  const updCasualty = (field: CasualtyField, v: number) =>
+    upd({ [field]: v, pers_active: Math.max(0, unit.pers_active - (v - unit[field])) });
   const onMap = unit.x !== null && unit.y !== null;
 
   const addChild = async () => {
@@ -139,6 +156,20 @@ export function UnitEditor({ unit }: { unit: Unit }) {
           <input disabled value={onMap ? `${Math.round(unit.x!)}, ${Math.round(unit.y!)}` : "not on map"} />
         </label>
       </div>
+      <label title="Moves this unit and all its subordinates">
+        Reports to
+        <select
+          value={unit.parent_id ?? ""}
+          onChange={(e) => s.moveUnit(unit.id, e.target.value === "" ? null : Number(e.target.value))}
+        >
+          <option value="">— Top level ({SIDE_LABEL[unit.side]}) —</option>
+          {parentOptions(s.tree, unit).map(({ unit: p, depth }) => (
+            <option key={p.id} value={p.id} disabled={p.id !== unit.parent_id && !canReparent(s.tree, unit, p)}>
+              {"\u00a0\u00a0".repeat(depth)}{p.name}
+            </option>
+          ))}
+        </select>
+      </label>
       <div className="btnrow">
         <button onClick={() => ui.setPlacing({ kind: "existing", unitId: unit.id })}>{onMap ? "Move on map" : "Place on map"}</button>
         {onMap && <button onClick={() => ui.center(unit.id)}>Center</button>}
@@ -150,9 +181,9 @@ export function UnitEditor({ unit }: { unit: Unit }) {
       <h4>Personnel <small>{kids.length > 0 && <>(subtree: {rolled.active}/{personnelTotal(rolled)} active)</>}</small></h4>
       <div className="counters">
         <Counter label="Active" tone="ok" value={unit.pers_active} onChange={(v) => upd({ pers_active: v })} />
-        <Counter label="Wounded" tone="warn" value={unit.pers_wounded} onChange={(v) => upd({ pers_wounded: v })} />
-        <Counter label="KIA" tone="bad" value={unit.pers_kia} onChange={(v) => upd({ pers_kia: v })} />
-        <Counter label="MIA" tone="muted" value={unit.pers_mia} onChange={(v) => upd({ pers_mia: v })} />
+        <Counter label="Wounded" tone="warn" value={unit.pers_wounded} onChange={(v) => updCasualty("pers_wounded", v)} />
+        <Counter label="KIA" tone="bad" value={unit.pers_kia} onChange={(v) => updCasualty("pers_kia", v)} />
+        <Counter label="MIA" tone="muted" value={unit.pers_mia} onChange={(v) => updCasualty("pers_mia", v)} />
       </div>
 
       <h4>Vehicles <small>{kids.length > 0 && <>(subtree: {rolled.vOp}/{vehicleTotal(rolled)} operational)</>}</small></h4>

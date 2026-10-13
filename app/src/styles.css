@@ -78,6 +78,7 @@ h4 small { text-transform: none; letter-spacing: 0; font-weight: 400; }
 .node, ul.kids li { display: flex; align-items: center; gap: 6px; padding: 4px 6px; cursor: pointer; border-radius: 3px; }
 .node:hover, ul.kids li:hover { background: var(--bg3); }
 .node.selected { background: #2a4469; }
+.node.drop-over, .side-group header.drop-over { outline: 2px dashed #6aa0e8; outline-offset: -2px; background: var(--bg3); }
 .twisty { width: 12px; color: var(--dim); text-align: center; }
 .twisty.empty { visibility: hidden; }
 .pin { color: var(--accent); font-size: 8px; }
