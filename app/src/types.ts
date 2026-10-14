@@ -73,6 +73,8 @@ export interface Frontline {
   label: string;
   taken_at: string; // local date-time, YYYY-MM-DDTHH:mm
   shapes: Shape[];
+  /** Where each unit was at this snapshot, by unit id; units not listed are off the map. */
+  positions: Record<string, Pt>;
 }
 
 export interface Sitrep {

@@ -95,6 +95,15 @@ if (!hasColumn("unit_vehicles", "abandoned")) {
            ALTER TABLE unit_vehicles ADD COLUMN captured INTEGER NOT NULL DEFAULT 0`);
 }
 
+// Unit positions per frontline snapshot, as {unitId: [x, y]}; a unit missing from the map is off the map in that snapshot.
+// Snapshots taken before this existed start with the units' current positions.
+if (!hasColumn("frontlines", "positions")) {
+  db.exec("ALTER TABLE frontlines ADD COLUMN positions TEXT NOT NULL DEFAULT '{}'");
+  for (const f of db.prepare("SELECT id, operation_id FROM frontlines").all() as Row[]) {
+    db.prepare("UPDATE frontlines SET positions = ? WHERE id = ?").run(JSON.stringify(currentPositions(f.operation_id as number)), f.id as number);
+  }
+}
+
 const orphans = db.prepare(
   "SELECT (SELECT COUNT(*) FROM units WHERE operation_id IS NULL) + (SELECT COUNT(*) FROM frontlines WHERE operation_id IS NULL) AS n",
 ).get() as { n: number };
@@ -330,21 +339,33 @@ export function instantiateTemplate(operationId: number, templateId: number, b: 
 }
 
 function parseFrontline(r: Row) {
-  return { ...r, shapes: JSON.parse(r.shapes as string) };
+  return { ...r, shapes: JSON.parse(r.shapes as string), positions: JSON.parse(r.positions as string) };
+}
+
+function currentPositions(operationId: number) {
+  const rows = db.prepare("SELECT id, x, y FROM units WHERE operation_id = ? AND x IS NOT NULL AND y IS NOT NULL").all(operationId) as Row[];
+  return Object.fromEntries(rows.map((u) => [u.id, [u.x, u.y]]));
 }
 
 const getFrontline = (id: number | bigint) => parseFrontline(db.prepare("SELECT * FROM frontlines WHERE id = ?").get(id)!);
 
-/** New snapshot; `copy_from` clones another snapshot's shapes so each update starts from the previous line. */
+/**
+ * New snapshot; `copy_from` clones another snapshot's shapes and unit positions so each update starts from the previous
+ * one. Without it, units start where they currently are.
+ */
 export function createFrontline(operationId: number, b: Row) {
   let shapes = b.shapes ?? [];
+  let positions = JSON.stringify(currentPositions(operationId));
   if (b.copy_from !== undefined) {
-    const src = db.prepare("SELECT shapes FROM frontlines WHERE id = ?").get(Number(b.copy_from)) as Row | undefined;
-    if (src) shapes = JSON.parse(src.shapes as string);
+    const src = db.prepare("SELECT shapes, positions FROM frontlines WHERE id = ?").get(Number(b.copy_from)) as Row | undefined;
+    if (src) {
+      shapes = JSON.parse(src.shapes as string);
+      positions = src.positions as string;
+    }
   }
   const info = db
-    .prepare("INSERT INTO frontlines (operation_id, label, taken_at, shapes) VALUES (?, ?, ?, ?)")
-    .run(operationId, String(b.label ?? ""), String(b.taken_at), JSON.stringify(shapes));
+    .prepare("INSERT INTO frontlines (operation_id, label, taken_at, shapes, positions) VALUES (?, ?, ?, ?, ?)")
+    .run(operationId, String(b.label ?? ""), String(b.taken_at), JSON.stringify(shapes), positions);
   return getFrontline(info.lastInsertRowid);
 }
 
@@ -352,6 +373,18 @@ export function updateFrontline(id: number, b: Row) {
   if (typeof b.label === "string") db.prepare("UPDATE frontlines SET label = ? WHERE id = ?").run(b.label, id);
   if (typeof b.taken_at === "string") db.prepare("UPDATE frontlines SET taken_at = ? WHERE id = ?").run(b.taken_at, id);
   if (Array.isArray(b.shapes)) db.prepare("UPDATE frontlines SET shapes = ? WHERE id = ?").run(JSON.stringify(b.shapes), id);
+  // Merged per unit so concurrent moves of different units don't overwrite each other; null takes a unit off the map.
+  if (b.positions && typeof b.positions === "object") {
+    const row = db.prepare("SELECT positions FROM frontlines WHERE id = ?").get(id) as Row | undefined;
+    if (row) {
+      const positions = JSON.parse(row.positions as string);
+      for (const [unitId, pos] of Object.entries(b.positions as Row)) {
+        if (pos === null) delete positions[unitId];
+        else positions[unitId] = pos;
+      }
+      db.prepare("UPDATE frontlines SET positions = ? WHERE id = ?").run(JSON.stringify(positions), id);
+    }
+  }
   return getFrontline(id);
 }
 

@@ -5,6 +5,7 @@ import { buildTree, descendantIds, type Tree } from "./orbat/rollup";
 import type { Frontline, Shape, Side, Sitrep, Unit, UnitTemplate, UnitVehicle, VehicleCategory, VehicleCounts, VehicleType } from "./types";
 
 interface Store {
+  /** Positions (x, y) are those of the active snapshot, when there is one. */
   units: Unit[];
   vehicleTypes: VehicleType[];
   unitVehicles: UnitVehicle[];
@@ -32,6 +33,7 @@ interface Store {
 
   /** With `template_id`, builds that template's whole subtree; the template's root becomes the returned unit. */
   createUnit: (u: Partial<Unit> & { side: Side; template_id?: number }) => Promise<Unit | undefined>;
+  /** A position change goes to the active snapshot (and to the unit itself when that is the newest snapshot). */
   updateUnit: (id: number, patch: Partial<Unit>) => Promise<void>;
   /** Moves a unit and its whole subtree under another unit (null = top level), placing it last among its new siblings. */
   moveUnit: (id: number, parentId: number | null) => Promise<void>;
@@ -52,7 +54,7 @@ export const useStore = () => useContext(Ctx)!;
 
 /** State for one operation. Mounted with `key={operationId}` so switching operations starts from a clean slate. */
 export function StoreProvider({ operationId, children }: { operationId: number; children: ReactNode }) {
-  const [units, setUnits] = useState<Unit[]>([]);
+  const [rawUnits, setUnits] = useState<Unit[]>([]);
   const [vehicleTypes, setVehicleTypes] = useState<VehicleType[]>([]);
   const [unitVehicles, setUnitVehicles] = useState<UnitVehicle[]>([]);
   const [frontlines, setFrontlines] = useState<Frontline[]>([]);
@@ -72,7 +74,8 @@ export function StoreProvider({ operationId, children }: { operationId: number; 
     setSitreps(s.sitreps);
     setTemplates(s.templates);
     // An unsaved shape edit is newer than what the server just returned.
-    if (!pendingSave.current) setFrontlines(s.frontlines);
+    const pending = pendingSave.current;
+    setFrontlines(pending ? s.frontlines.map((f) => (f.id === pending.id ? { ...f, shapes: pending.shapes } : f)) : s.frontlines);
   }, [operationId]);
 
   useEffect(() => {
@@ -96,6 +99,16 @@ export function StoreProvider({ operationId, children }: { operationId: number; 
   );
 
   const activeFront = frontlines.find((f) => f.id === activeFrontId) ?? frontlines[frontlines.length - 1] ?? null;
+  const latestFront = frontlines[frontlines.length - 1] ?? null;
+
+  // With a snapshot shown, units sit where they were at that snapshot.
+  const units = useMemo(() => {
+    if (!activeFront) return rawUnits;
+    return rawUnits.map((u) => {
+      const p = activeFront.positions[u.id];
+      return { ...u, x: p ? p[0] : null, y: p ? p[1] : null };
+    });
+  }, [rawUnits, activeFront]);
 
   const tree = useMemo(() => buildTree(units, unitVehicles), [units, unitVehicles]);
 
@@ -149,8 +162,22 @@ export function StoreProvider({ operationId, children }: { operationId: number; 
     openOrbat: setOrbatViewId,
 
     createUnit: (u) =>
-      run(() => api.createUnit(operationId, u.template_id !== undefined ? u : { sidc: defaultSidc(u.side), name: "New unit", ...u })),
-    updateUnit: async (id, patch) => void (await run(() => api.updateUnit(id, patch))),
+      run(async () => {
+        const c = await api.createUnit(operationId, u.template_id !== undefined ? u : { sidc: defaultSidc(u.side), name: "New unit", ...u });
+        if (activeFront && u.x != null && u.y != null) await api.updateFrontline(activeFront.id, { positions: { [c.id]: [u.x, u.y] } });
+        return c;
+      }),
+    updateUnit: async (id, patch) => {
+      if (!activeFront || !("x" in patch || "y" in patch)) return void (await run(() => api.updateUnit(id, patch)));
+      const { x, y, ...rest } = patch;
+      const placed = x != null && y != null;
+      // The unit's own x/y follow the newest snapshot, so they stay the "current" position new snapshots start from.
+      const unitPatch = activeFront.id === latestFront?.id ? { ...rest, x: placed ? x : null, y: placed ? y : null } : rest;
+      await run(async () => {
+        await api.updateFrontline(activeFront.id, { positions: { [id]: placed ? [x, y] : null } });
+        if (Object.keys(unitPatch).length) await api.updateUnit(id, unitPatch);
+      });
+    },
     moveUnit: async (id, parentId) => {
       const sort = (tree.children.get(parentId) ?? []).reduce((m, u) => Math.max(m, u.sort + 1), 0);
       await run(() => api.updateUnit(id, { parent_id: parentId, sort }));

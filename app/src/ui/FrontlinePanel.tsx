@@ -95,7 +95,7 @@ function Guide({ hasSnapshot, hasShapes, drawing }: { hasSnapshot: boolean; hasS
       <b onClick={() => setOpen(!open)} style={{ cursor: "pointer" }}>{open ? "▾" : "▸"} How to draw the frontline</b>
       {open && (
         <ol>
-          <li className={cls(1)}>Create a snapshot — a dated copy of the frontline.</li>
+          <li className={cls(1)}>Create a snapshot — a dated copy of the frontline and where units are on the map.</li>
           <li className={cls(2)}>Pick what to draw below (or right-click the map): an <b>area</b> for who holds the ground, or a <b>front line</b> for the line of contact.</li>
           <li className={cls(3)}>Click points on the map, or switch to <b>Freehand</b> and drag along a terrain feature. Finish with <b>double-click</b>, <b>Enter</b> or the Finish button. Backspace undoes the last point or stroke.</li>
           <li className={cls(4)}>Adjust: click a shape, drag its square handles, click the yellow dots to add a point, right-click a handle to remove it.</li>
@@ -179,7 +179,7 @@ export function FrontlinePanel({ fs }: { fs: FrontState }) {
             <label>Date / time <input type="datetime-local" value={newDate} onChange={(e) => setNewDate(e.target.value)} /></label>
             <label>Label <input value={newLabel} placeholder="optional" onChange={(e) => setNewLabel(e.target.value)} /></label>
           </div>
-          {front && <small className="hint">Starts as a copy of the snapshot shown above.</small>}
+          {front && <small className="hint">Starts as a copy of the snapshot shown above, unit positions included.</small>}
           <div className="btnrow">
             <button className="primary" disabled={!newDate} onClick={create}>Create snapshot</button>
             <button onClick={() => setAdding(false)}>Cancel</button>

@@ -1,4 +1,4 @@
-import type { Frontline, Operation, Shape, Side, Sitrep, Unit, UnitTemplate, UnitVehicle, VehicleCategory, VehicleCounts, VehicleType } from "./types";
+import type { Frontline, Operation, Pt, Shape, Side, Sitrep, Unit, UnitTemplate, UnitVehicle, VehicleCategory, VehicleCounts, VehicleType } from "./types";
 
 export interface State {
   units: Unit[];
@@ -41,7 +41,11 @@ export const api = {
     call<UnitVehicle>("PUT", `/api/units/${unitId}/vehicles/${typeId}`, v),
   createFrontline: (op: number, b: { taken_at: string; label?: string; copy_from?: number; shapes?: Shape[] }) =>
     call<Frontline>("POST", `/api/operations/${op}/frontlines`, b),
-  updateFrontline: (id: number, patch: Partial<Pick<Frontline, "label" | "taken_at" | "shapes">>) =>
+  /** `positions` is merged per unit; null takes that unit off the map in this snapshot. */
+  updateFrontline: (
+    id: number,
+    patch: Partial<Pick<Frontline, "label" | "taken_at" | "shapes">> & { positions?: Record<string, Pt | null> },
+  ) =>
     call<Frontline>("PATCH", `/api/frontlines/${id}`, patch),
   deleteFrontline: (id: number) => call<void>("DELETE", `/api/frontlines/${id}`),
   setSitrep: (frontlineId: number, side: Side, b: { author: string; body: string }) =>
